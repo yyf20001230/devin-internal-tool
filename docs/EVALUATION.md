@@ -1,0 +1,165 @@
+# Devin vs Power Apps for fintech internal tools — evaluation and recommendation
+
+*Context: a fintech engineering team that expects to build many internal back-office tools
+(KYC queues, refund approvals, flag admin, dispute tracking, ...). This document is written
+from the prototype in this repo, built in roughly one hour of Devin time.*
+
+## 1. What Power Apps actually sells
+
+Strip away the marketing and Power Apps is three things:
+
+1. **A generated CRUD app over a data model.** Define a table; get grids, forms, views,
+   a command bar, dashboards, search and mobile for free.
+2. **Governance you didn't have to build.** Roles, column-level security, audit,
+   DLP policies, tenant isolation, encryption, export controls, Entra ID sign-in.
+3. **A maker who is not an engineer.** Ops can build the tool themselves; engineering
+   is not the bottleneck.
+
+Everything else (Power Automate, connectors, Copilot, Power BI) is the M365 gravity well
+around those three.
+
+## 2. What the prototype shows Devin can replicate
+
+| Power Apps value | Prototype | Verdict |
+|---|---|---|
+| Generated CRUD from a schema | `tools/*.yaml` → tables, API, grid, form, views, command bar, tiles | **Replicated.** 4 tools = ~370 lines of YAML, 0 lines of tool-specific code. |
+| Roles / row scope | `permissions:` + "assigned to me" views | Replicated for the common cases; no record-sharing or hierarchical BU model. |
+| Column-level security | `visible_to:` — masked in grid, form, search, audit, export; writes rejected | Replicated, and arguably tighter (search can't leak a masked column). |
+| Audit | before/after per change with user + comment | Replicated. |
+| Export control (`prvExportToExcel`) | `permissions.export`, export itself is audited | Replicated. |
+| Commands with business rules | `actions:` with role, state guard, comment, confirm | Replicated. |
+| Power Automate | `webhook:` on an action | **Simulated only.** A real version is an outbox + worker (~1 session). |
+| Dashboards | KPI / group / series tiles | Replicated for simple aggregates; no cross-table joins, no drill-through. |
+| Entra ID sign-in | `X-User` header stub | **Not built.** OIDC at the proxy is a well-trodden ~half-session. |
+| Mobile / offline | — | **Not built**, and not cheap. |
+| Relationships between tables, lookups | — | **Not built.** Biggest functional gap for a real platform. |
+| Non-engineer maker | Devin + `.devin/playbooks/new-internal-tool.md` | Different shape — see §3. |
+| Tenant-grade controls (DLP, IP firewall, CMK) | — | Not applicable: no connectors to police; data never leaves your infra. |
+
+The 4th tool (Chargeback Watchlist) is the key evidence: written from a one-paragraph
+request following the playbook, it needed a YAML file and seed rows, nothing else, and
+inherited all 12 governance tests automatically.
+
+## 3. Honest comparison for this team
+
+### Build cost
+
+| | Power Apps | Devin-built platform |
+|---|---|---|
+| First tool | Days for a maker to learn; hours once fluent | This prototype: ~1h of Devin for platform + 3 tools |
+| Nth tool | Hours to a day, in Studio | ~5 min Devin + 15-30 min human PR review |
+| Production-ready | Included (Microsoft runs it) | **Not free:** OIDC, Postgres, migrations, deployment, backups, relationships, outbox — realistically 4-8 Devin sessions plus 2-3 engineer-days of review and security sign-off |
+| Ongoing licence | Per-user/per-app premium licences for anyone touching Dataverse or premium connectors; Managed Environments for the governance features that matter to a fintech | Hosting only (a small VM / container) + Devin usage |
+
+At ~100+ ops users on premium licences the Power Apps run-rate is real money every year;
+the Devin platform's cost is front-loaded and then near flat. Below ~30 users the licence
+is cheap and this argument disappears.
+
+### Maintenance burden
+
+**Power Apps:** Microsoft patches the platform, but *you* absorb their roadmap — control
+deprecations, "new look" migrations, connector changes, licence repackaging. Apps built by
+someone who left become orphans nobody can read. ALM (solutions, environments, pipelines)
+is workable but alien to an engineering team used to git.
+
+**Devin platform:** you own the code, so you own the dependency upgrades, CVEs and hosting.
+Mitigations: it is ordinary FastAPI/React that any engineer can read; there is *one*
+codebase for N tools so a fix lands everywhere; and routine maintenance (bumps, test
+fixes) is exactly the work Devin is good at. Realistic steady state: an hour or two of
+review a month, more when a big framework upgrade lands.
+
+The real maintenance risk is **platform ownership**: someone must own `server/` and `web/`.
+If nobody does, this decays faster than Power Apps would.
+
+### Security
+
+**Power Apps:** mature and certified, but every control from the earlier research (DLP,
+tenant isolation, IP firewall, column security, export privileges, CMK) is opt-in and
+several are licence-gated. The default environment is wide open, and the citizen-developer
+model is *designed* to route around engineering review — which is the thing a fintech's
+change-control policy exists to prevent. Every connector a maker adds is a new data path
+to assess.
+
+**Devin platform:** data stays in your VPC and your Postgres; sign-in is your existing
+IdP; secrets live in your vault; every change to a tool is a PR with a diff, a reviewer
+and a CI run — the exact evidence your SOC 2 / PCI auditors already collect. Column
+masking, audit and export control are enforced in one place and tested generically.
+The costs: you have to *build* those controls (the prototype's auth is a stub), you have
+to review AI-written code seriously, and Devin sessions need repo access — production data
+should never be fed to the agent (seed data only, as here).
+
+Net: for the specific concern raised earlier — merchant transaction data leaking — the
+in-house platform has a smaller and more inspectable attack surface. Power Apps has more
+controls; the in-house platform needs fewer.
+
+### Opportunity cost of engineering time
+
+This is the crux, and it cuts both ways.
+
+- **Power Apps' promise** is that engineers never touch internal tools. In practice,
+  fintech tools need custom APIs, premium connectors, PCF components and someone to debug
+  Power Fx — so engineering gets pulled in anyway, but into a stack it doesn't know.
+- **The Devin model** turns tool-building into *PR review*. Engineers spend 15-30 minutes
+  per tool reading YAML and a screenshot rather than a day writing React. But the request
+  still enters an engineering queue unless ops are allowed to open Devin sessions
+  themselves (feasible with the playbook, and worth piloting).
+- The hidden cost is the **first month**: hardening the platform is real engineering work
+  that Power Apps would have skipped entirely.
+
+### Where Power Apps still clearly wins
+
+- Non-engineer self-service with zero engineering involvement.
+- Mobile app, offline, camera/barcode capture out of the box.
+- Deep M365 integration (Teams, SharePoint, Outlook, Excel) and 1000+ connectors.
+- Table relationships, lookups, business rules, and the compliance certification portfolio
+  on day one.
+- Nobody has to run a server.
+
+### Where the Devin-built platform clearly wins
+
+- Fits an engineering org's existing controls: git, code review, CI, IaC, SIEM.
+- No per-user licence; no vendor roadmap risk; no "premium connector" surprises.
+- Pixel-level UI freedom (the purple "new look" here is 250 lines of CSS).
+- Sensitive data never leaves your infrastructure.
+- Governance is *tested*, not configured: a new tool cannot ship with export wider than
+  read, or a destructive action without a comment, because a test fails.
+
+## 4. Recommendation
+
+**Build — but build the platform, not the apps.** For a fintech *engineering* team with a
+working deploy pipeline, compliance obligations around change control, and a pipeline of
+many similar back-office tools, a thin schema-driven platform like this one, with Devin as
+the maker, is the better bet. Its economics improve with every tool and every user;
+Power Apps' worsen with both.
+
+Conditions — this recommendation flips if any of these are false:
+
+1. **Someone owns the platform.** Name an engineer as owner of `server/` and `web/`.
+   Without that, buy.
+2. **The tools are back-office web tools.** If mobile, offline or field capture is a
+   real requirement, buy (or use Power Apps just for those).
+3. **Ops can live with a review step**, or you pilot letting them prompt Devin directly.
+   If the requirement is truly "no engineer in the loop, ever", buy.
+4. **The user count is meaningful** (≳ 50-100 licensed seats). Below that, Power Apps'
+   licence cost is noise and its speed-to-first-app wins.
+
+Suggested path:
+
+- **Now:** harden this prototype — OIDC, Postgres, outbox for webhooks, table
+  relationships. Estimate: 4-8 Devin sessions, ~3 engineer-days of review.
+- **Pilot (4-6 weeks):** migrate two real tools; let one ops lead open Devin sessions
+  using the playbook; measure request-to-production time and review minutes per tool.
+- **Kill criteria:** if median review time per tool exceeds ~2 hours, or the platform
+  owner spends more than a day a month on it, stop and buy.
+- **Keep Power Apps in scope** for M365-adjacent, low-sensitivity employee forms
+  (expenses, access requests) where its connectors are the whole point. Also evaluate
+  Retool/Appsmith as a "buy" middle ground — code-friendly, but still a licence and still
+  a place your data flows through.
+
+## 5. What this prototype is not
+
+It is a one-hour proof, not a product: stub auth, SQLite, simulated webhooks, additive-only
+migrations, no relationships, no file attachments, no notifications, no i18n, no rate
+limiting. Its purpose is to show that the *shape* of Power Apps — schema in, governed app
+out — is small enough to own, and that Devin can both build the platform and then act as
+the maker on top of it.
