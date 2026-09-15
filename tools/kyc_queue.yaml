@@ -1,0 +1,102 @@
+id: kyc
+name: KYC Review Queue
+app: Compliance Operations
+description: Work queue for onboarding cases with risk scoring, SLA tracking and four-eyes approval.
+entity: kyc_case
+title_field: case_id
+assignee_field: assignee
+
+fields:
+  - {name: case_id, label: Case, type: text, required: true, width: 110}
+  - {name: applicant, label: Applicant, type: text, required: true}
+  - {name: country, label: Country, type: text, width: 70}
+  - {name: risk, label: Risk, type: choice, options: [Low, Medium, High], default: Medium, width: 90}
+  - {name: risk_score, label: Score, type: number, width: 70}
+  - {name: sanctions_hit, label: Sanctions / PEP, type: boolean, default: false, width: 110}
+  - {name: docs_complete, label: Docs, type: percent, width: 80}
+  - name: id_document_number
+    label: ID document no.
+    type: text
+    visible_to: [compliance_lead]      # column-level security
+    mask: last4
+  - name: date_of_birth
+    label: Date of birth
+    type: date
+    visible_to: [compliance_lead]
+  - {name: status, label: Status, type: choice, options: [Pending, In review, Escalated, Approved, Rejected], default: Pending, width: 100}
+  - {name: assignee, label: Assigned to, type: text}
+  - {name: sla_due, label: SLA due, type: datetime}
+  - {name: opened_at, label: Opened, type: datetime}
+  - {name: notes, label: Notes, type: multiline}
+
+views:
+  - id: open
+    name: Open cases
+    filter: {status: [Pending, In review, Escalated]}
+    columns: [case_id, applicant, country, risk, risk_score, sanctions_hit, docs_complete, status, assignee, sla_due]
+    sort: sla_due asc
+  - id: mine
+    name: Assigned to me
+    mine: true
+    filter: {status: [Pending, In review, Escalated]}
+    columns: [case_id, applicant, risk, risk_score, sanctions_hit, docs_complete, status, sla_due]
+    sort: sla_due asc
+  - id: breach
+    name: Breaching SLA in 4h
+    filter: {status: [Pending, In review, Escalated], sla_due: {lt: now+4h}}
+    columns: [case_id, applicant, risk, sanctions_hit, status, assignee, sla_due]
+    sort: sla_due asc
+  - id: high
+    name: High risk & sanctions hits
+    filter: {risk: High}
+    columns: [case_id, applicant, country, risk_score, sanctions_hit, status, assignee, sla_due]
+    sort: risk_score desc
+  - id: closed
+    name: Decided
+    filter: {status: [Approved, Rejected]}
+    columns: [case_id, applicant, country, risk, status, assignee, opened_at]
+
+actions:
+  - id: start_review
+    label: Start review
+    roles: [analyst, compliance_lead]
+    only_when: {status: Pending}
+    set: {status: In review}
+  - id: approve
+    label: Approve
+    roles: [compliance_lead]
+    only_when: {status: [In review, Escalated]}
+    set: {status: Approved}
+    confirm: Approve this applicant? This opens their account.
+  - id: reject
+    label: Reject
+    roles: [compliance_lead]
+    only_when: {status: [In review, Escalated]}
+    set: {status: Rejected}
+    requires_comment: true
+    destructive: true
+  - id: escalate
+    label: Escalate to EDD
+    roles: [analyst, compliance_lead]
+    only_when: {status: [Pending, In review]}
+    set: {status: Escalated, risk: High}
+    requires_comment: true
+  - id: request_docs
+    label: Request documents
+    roles: [analyst, compliance_lead]
+    only_when: {status: [Pending, In review, Escalated]}
+    webhook: https://hooks.internal/onboarding/request-documents   # Power Automate equivalent
+
+dashboard:
+  - {type: kpi, title: Open cases, filter: {status: [Pending, In review, Escalated]}}
+  - {type: kpi, title: Breaching SLA in 4h, filter: {status: [Pending, In review, Escalated], sla_due: {lt: now+4h}}}
+  - {type: kpi, title: Sanctions / PEP hits open, filter: {sanctions_hit: true, status: [Pending, In review, Escalated]}}
+  - {type: group, title: Open cases by risk, field: risk, chart: donut, filter: {status: [Pending, In review, Escalated]}}
+  - {type: group, title: Queue by analyst, field: assignee, chart: hbar, filter: {status: [Pending, In review, Escalated]}}
+  - {type: series, title: Cases opened per day, date_field: opened_at, days: 14, chart: bar}
+
+permissions:
+  read: [analyst, compliance_lead, readonly, engineer]
+  create: [analyst, compliance_lead]
+  update: [analyst, compliance_lead]
+  export: [compliance_lead]

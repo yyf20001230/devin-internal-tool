@@ -1,0 +1,32 @@
+# Stand-in for Entra ID groups. Roles are referenced by the tool YAMLs.
+roles:
+  analyst: KYC analyst - works the queue, cannot approve
+  compliance_lead: Compliance lead - approves/rejects, sees ID documents, may export
+  payments_ops: Payments operations - reviews and approves refunds
+  finance: Finance - approves high-value refunds, sees full bank details, may export
+  engineer: Engineer - manages feature flags in DEV/UAT, read-only on ops tools
+  release_manager: Release manager - flips PROD flags, owns kill switch
+  readonly: Read-only auditor
+
+users:
+  - id: priya
+    name: Priya Nair
+    roles: [analyst]
+  - id: marcus
+    name: Marcus Chen
+    roles: [compliance_lead, analyst]
+  - id: sofia
+    name: Sofia Alvarez
+    roles: [payments_ops]
+  - id: dan
+    name: Dan Whitfield
+    roles: [finance, payments_ops]
+  - id: lin
+    name: Lin Zhao
+    roles: [engineer]
+  - id: amara
+    name: Amara Okafor
+    roles: [release_manager, engineer]
+  - id: auditor
+    name: External Auditor
+    roles: [readonly]

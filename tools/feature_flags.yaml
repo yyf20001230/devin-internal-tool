@@ -1,0 +1,88 @@
+id: flags
+name: Feature Flags
+app: Release Control
+description: Admin panel over the flag store. Services read flags from the serving store; this is the governed write path.
+entity: feature_flag
+title_field: key
+assignee_field: owner
+
+fields:
+  - {name: key, label: Flag key, type: text, required: true}
+  - {name: service, label: Service, type: choice, options: [payments-api, refunds-svc, onboarding, ledger, web-app], required: true, width: 120}
+  - {name: description, label: Description, type: text}
+  - {name: dev, label: DEV, type: boolean, default: true, width: 60}
+  - {name: uat, label: UAT, type: boolean, default: false, width: 60}
+  - {name: prod, label: PROD, type: boolean, default: false, width: 60}
+  - {name: rollout, label: PROD rollout %, type: percent, default: 0, width: 110}
+  - {name: change_request, label: Change request, type: text, width: 110}
+  - {name: cr_status, label: CR status, type: choice, options: [None, Pending, Approved, Rejected], default: None, width: 90}
+  - {name: owner, label: Owner, type: text}
+  - {name: last_changed, label: Last changed, type: datetime}
+  - {name: stale, label: Stale, type: boolean, default: false, width: 60}
+
+views:
+  - id: all
+    name: All flags
+    filter: {}
+    columns: [key, service, dev, uat, prod, rollout, change_request, cr_status, owner, last_changed]
+    sort: key asc
+  - id: prod_no_cr
+    name: PROD on without approved CR
+    filter: {prod: true, cr_status: [None, Pending, Rejected]}
+    columns: [key, service, prod, rollout, change_request, cr_status, owner, last_changed]
+  - id: pending_cr
+    name: Awaiting release approval
+    filter: {cr_status: Pending}
+    columns: [key, service, uat, prod, rollout, change_request, owner, last_changed]
+  - id: stale
+    name: Stale (100% for > 30d)
+    filter: {stale: true}
+    columns: [key, service, prod, rollout, owner, last_changed]
+
+actions:
+  - id: enable_uat
+    label: Enable in UAT
+    roles: [engineer, release_manager]
+    only_when: {uat: false}
+    set: {uat: true}
+  - id: request_release
+    label: Request PROD release
+    roles: [engineer, release_manager]
+    only_when: {cr_status: [None, Rejected]}
+    set: {cr_status: Pending}
+    requires_comment: true
+    webhook: https://hooks.internal/change-management/create-cr
+  - id: approve_cr
+    label: Approve change request
+    roles: [release_manager]
+    only_when: {cr_status: Pending}
+    set: {cr_status: Approved}
+  - id: enable_prod
+    label: Enable in PROD
+    roles: [release_manager]
+    only_when: {cr_status: Approved, prod: false}
+    set: {prod: true}
+    confirm: Flip this flag on in PROD? It syncs to the serving store immediately.
+    webhook: https://hooks.internal/flag-store/sync
+  - id: kill_switch
+    label: Kill switch (PROD off)
+    roles: [release_manager]
+    only_when: {prod: true}
+    set: {prod: false, rollout: 0}
+    requires_comment: true
+    destructive: true
+    webhook: https://hooks.internal/flag-store/sync
+
+dashboard:
+  - {type: kpi, title: Flags on in PROD, filter: {prod: true}}
+  - {type: kpi, title: PROD on without approved CR, filter: {prod: true, cr_status: [None, Pending, Rejected]}}
+  - {type: kpi, title: Awaiting release approval, filter: {cr_status: Pending}}
+  - {type: kpi, title: Stale flags, filter: {stale: true}}
+  - {type: group, title: PROD flags by service, field: service, chart: hbar, filter: {prod: true}}
+  - {type: group, title: Change request status, field: cr_status, chart: donut}
+
+permissions:
+  read: [engineer, release_manager, readonly]
+  create: [engineer, release_manager]
+  update: [engineer, release_manager]
+  export: [release_manager]

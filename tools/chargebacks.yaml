@@ -1,0 +1,91 @@
+# Added as the "4th tool" demo: written from the one-paragraph request in the playbook,
+# no changes to server/ or web/.
+id: chargebacks
+name: Chargeback Watchlist
+app: Payments Operations
+description: Open disputes with response deadlines and evidence status. Only finance can accept a loss.
+entity: chargeback
+title_field: dispute_id
+assignee_field: handler
+
+fields:
+  - {name: dispute_id, label: Dispute, type: text, required: true, width: 110}
+  - {name: merchant, label: Merchant, type: text, required: true}
+  - {name: amount, label: Amount, type: money, required: true, width: 100}
+  - {name: currency, label: Ccy, type: choice, options: [GBP, EUR, USD], default: GBP, width: 60}
+  - {name: reason_code, label: Reason code, type: choice, options: ["10.4 Fraud - card absent", "13.1 Goods not received", "13.3 Not as described", "12.6 Duplicate processing", "13.7 Cancelled services"], width: 180}
+  - {name: deadline, label: Respond by, type: datetime, required: true}
+  - {name: evidence_status, label: Evidence, type: choice, options: [Not started, Gathering, Submitted, Not contesting], default: Not started, width: 110}
+  - {name: status, label: Status, type: choice, options: [Open, Won, Lost, Accepted loss], default: Open, width: 110}
+  - {name: handler, label: Handler, type: text}
+  - {name: cardholder_name, label: Cardholder, type: text, visible_to: [finance]}
+  - {name: card_last4, label: Card, type: text, visible_to: [payments_ops, finance], width: 70}
+  - {name: notes, label: Notes, type: multiline}
+
+views:
+  - id: open
+    name: Open disputes
+    filter: {status: Open}
+    columns: [dispute_id, merchant, amount, currency, reason_code, deadline, evidence_status, handler, card_last4]
+    sort: deadline asc
+  - id: due48
+    name: Due in 48h
+    filter: {status: Open, deadline: {lt: now+48h}}
+    columns: [dispute_id, merchant, amount, currency, reason_code, deadline, evidence_status, handler]
+    sort: deadline asc
+  - id: mine
+    name: Assigned to me
+    mine: true
+    filter: {status: Open}
+    columns: [dispute_id, merchant, amount, currency, reason_code, deadline, evidence_status]
+    sort: deadline asc
+  - id: closed
+    name: Closed
+    filter: {status: [Won, Lost, Accepted loss]}
+    columns: [dispute_id, merchant, amount, currency, reason_code, status, handler]
+
+actions:
+  - id: start
+    label: Start gathering evidence
+    roles: [payments_ops, finance]
+    only_when: {status: Open, evidence_status: Not started}
+    set: {evidence_status: Gathering}
+  - id: submit_evidence
+    label: Submit evidence to scheme
+    roles: [payments_ops, finance]
+    only_when: {status: Open, evidence_status: Gathering}
+    set: {evidence_status: Submitted}
+    webhook: https://hooks.internal/disputes/submit-evidence
+  - id: won
+    label: Mark won
+    roles: [payments_ops, finance]
+    only_when: {status: Open, evidence_status: Submitted}
+    set: {status: Won}
+  - id: lost
+    label: Mark lost
+    roles: [payments_ops, finance]
+    only_when: {status: Open, evidence_status: Submitted}
+    set: {status: Lost}
+    requires_comment: true
+  - id: accept_loss
+    label: Accept loss
+    roles: [finance]
+    only_when: {status: Open}
+    set: {status: Accepted loss, evidence_status: Not contesting}
+    requires_comment: true
+    destructive: true
+    confirm: Accept this chargeback without contesting? The amount is debited from the merchant.
+
+dashboard:
+  - {type: kpi, title: Open disputes, filter: {status: Open}}
+  - {type: kpi, title: Due in 48h, filter: {status: Open, deadline: {lt: now+48h}}}
+  - {type: kpi, title: Value at risk, metric: sum, field: amount, format: money, filter: {status: Open}}
+  - {type: kpi, title: Accepted losses (30d), metric: sum, field: amount, format: money, filter: {status: Accepted loss}}
+  - {type: group, title: Open by reason code, field: reason_code, chart: hbar, filter: {status: Open}}
+  - {type: group, title: Outcomes, field: status, chart: donut, filter: {status: [Won, Lost, Accepted loss]}}
+
+permissions:
+  read: [payments_ops, finance, readonly]
+  create: [payments_ops, finance]
+  update: [payments_ops, finance]
+  export: [finance]

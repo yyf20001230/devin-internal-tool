@@ -1,0 +1,90 @@
+id: refunds
+name: Refunds Dashboard
+app: Payments Operations
+description: Refund approvals and analytics across card, bank transfer and wallet rails.
+entity: refund
+title_field: refund_id
+assignee_field: reviewer
+
+fields:
+  - {name: refund_id, label: Refund, type: text, required: true, width: 110}
+  - {name: merchant, label: Merchant, type: text, required: true}
+  - {name: amount, label: Amount, type: money, required: true, width: 100}
+  - {name: currency, label: Ccy, type: choice, options: [GBP, EUR, USD], default: GBP, width: 60}
+  - {name: rail, label: Rail, type: choice, options: [Card, Bank transfer, Wallet], default: Card, width: 110}
+  - {name: reason, label: Reason, type: choice, options: [Duplicate charge, Goods not received, Customer request, Fraud reversal, Subscription cancelled, Pricing error], width: 160}
+  - {name: risk, label: Risk, type: choice, options: [Low, Medium, High], default: Low, width: 80}
+  - {name: customer_email, label: Customer email, type: text, visible_to: [payments_ops, finance]}
+  - name: bank_account
+    label: Destination account
+    type: text
+    visible_to: [finance]     # only finance sees full destination account
+    mask: last4
+  - {name: status, label: Status, type: choice, options: [Awaiting approval, Approved, Rejected, Paid], default: Awaiting approval, width: 130}
+  - {name: reviewer, label: Reviewer, type: text}
+  - {name: requested_at, label: Requested, type: datetime}
+  - {name: notes, label: Notes, type: multiline}
+
+views:
+  - id: awaiting
+    name: Awaiting approval
+    filter: {status: Awaiting approval}
+    columns: [refund_id, merchant, amount, currency, rail, reason, risk, reviewer, requested_at]
+    sort: requested_at asc
+  - id: large
+    name: Over 1,000 (finance approval)
+    filter: {status: Awaiting approval, amount: {gte: 1000}}
+    columns: [refund_id, merchant, amount, currency, rail, reason, risk, bank_account, requested_at]
+    sort: amount desc
+  - id: fraud
+    name: Fraud reversals
+    filter: {reason: Fraud reversal}
+    columns: [refund_id, merchant, amount, currency, rail, risk, status, requested_at]
+    sort: requested_at desc
+  - id: all
+    name: All refunds (30 days)
+    filter: {requested_at: {gte: now-30d}}
+    columns: [refund_id, merchant, amount, currency, rail, reason, status, reviewer, requested_at]
+    sort: requested_at desc
+
+actions:
+  - id: approve
+    label: Approve
+    roles: [payments_ops, finance]
+    only_when: {status: Awaiting approval, amount: {lt: 1000}}
+    set: {status: Approved}
+  - id: approve_large
+    label: Approve (finance)
+    roles: [finance]
+    only_when: {status: Awaiting approval, amount: {gte: 1000}}
+    set: {status: Approved}
+    requires_comment: true
+    confirm: This refund is over the ops limit and needs finance sign-off. Approve?
+  - id: reject
+    label: Reject
+    roles: [payments_ops, finance]
+    only_when: {status: Awaiting approval}
+    set: {status: Rejected}
+    requires_comment: true
+    destructive: true
+  - id: pay
+    label: Send to payout
+    roles: [finance]
+    only_when: {status: Approved}
+    set: {status: Paid}
+    webhook: https://hooks.internal/payouts/refund
+
+dashboard:
+  - {type: kpi, title: Refund value (30d), metric: sum, field: amount, format: money, filter: {requested_at: {gte: now-30d}}}
+  - {type: kpi, title: Refunds requested (30d), filter: {requested_at: {gte: now-30d}}}
+  - {type: kpi, title: Awaiting approval, filter: {status: Awaiting approval}}
+  - {type: kpi, title: Awaiting value, metric: sum, field: amount, format: money, filter: {status: Awaiting approval}}
+  - {type: series, title: Refund value by day, metric: sum, field: amount, date_field: requested_at, days: 14, chart: bar, format: money}
+  - {type: group, title: Top refund reasons (30d), field: reason, chart: hbar, filter: {requested_at: {gte: now-30d}}}
+  - {type: group, title: By rail, field: rail, metric: sum, chart: donut, format: money}
+
+permissions:
+  read: [payments_ops, finance, readonly, engineer]
+  create: [payments_ops, finance]
+  update: [payments_ops, finance]
+  export: [finance]
