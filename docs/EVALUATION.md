@@ -119,7 +119,7 @@ This is the crux, and it cuts both ways.
 
 - Fits an engineering org's existing controls: git, code review, CI, IaC, SIEM.
 - No per-user licence; no vendor roadmap risk; no "premium connector" surprises.
-- Pixel-level UI freedom (the purple "new look" here is 250 lines of CSS).
+- Pixel-level UI freedom (the dark theme here is ~200 lines of CSS, swapped from a Power Apps-purple look in ten minutes).
 - Sensitive data never leaves your infrastructure.
 - Governance is *tested*, not configured: a new tool cannot ship with export wider than
   read, or a destructive action without a comment, because a test fails.

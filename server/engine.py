@@ -322,7 +322,8 @@ class Engine:
         for t in spec.dashboard:
             params: list = []
             where = compile_filter(t.filter, params)
-            agg = {"count": "COUNT(*)", "sum": f"COALESCE(SUM({t.field}),0)", "avg": f"COALESCE(AVG({t.field}),0)"}[t.metric]
+            vf = t.value_field or t.field
+            agg = {"count": "COUNT(*)", "sum": f"COALESCE(SUM({vf}),0)", "avg": f"COALESCE(AVG({vf}),0)"}[t.metric]
             if t.type == "kpi":
                 v = self.conn.execute(f"SELECT {agg} FROM {spec.entity} WHERE {where}", params).fetchone()[0]
                 tiles.append({**t.model_dump(), "value": v})

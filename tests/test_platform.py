@@ -156,3 +156,10 @@ def test_create_validates_choices_and_required(client):
     assert r.status_code == 400 and "one of" in r.json()["detail"]
     r = client.post("/api/tools/refunds/records", json={"refund_id": "RF-1", "merchant": "X", "amount": "12.5"}, headers=h("sofia"))
     assert r.status_code == 201 and r.json()["status"] == "Awaiting approval" and r.json()["currency"] == "GBP"
+
+
+def test_group_tile_sums_value_field_not_group_key(client):
+    tiles = client.get("/api/tools/refunds/dashboard", headers=h("dan")).json()
+    rail = next(t for t in tiles if t["field"] == "rail")
+    assert rail["value_field"] == "amount"
+    assert sum(d["value"] for d in rail["data"]) > 0

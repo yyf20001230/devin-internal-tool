@@ -1,7 +1,7 @@
 import type { TileSpec } from './api'
 import { fmt } from './api'
 
-const PALETTE = ['#742774', '#b46cb4', '#0f6cbd', '#107c10', '#b25b00', '#c4262e', '#8a8886']
+const PALETTE = ['#5b9cf6', '#b083f0', '#39c5bb', '#3fb950', '#d9a021', '#f0524f', '#8b8b90']
 
 function value(t: TileSpec, v: number) {
   if (t.format === 'money') return fmt.money(v)
@@ -58,7 +58,7 @@ function Donut({ t }: { t: TileSpec }) {
   return (
     <div className="donut">
       <svg viewBox="0 0 100 100">
-        <circle cx="50" cy="50" r={r} fill="none" stroke="#f0edf3" strokeWidth="16" />
+        <circle cx="50" cy="50" r={r} fill="none" stroke="#262628" strokeWidth="16" />
         {data.map((d, i) => {
           const len = (d.value / total) * c
           const el = <circle key={d.label} cx="50" cy="50" r={r} fill="none" stroke={PALETTE[i % PALETTE.length]} strokeWidth="16"
@@ -66,7 +66,7 @@ function Donut({ t }: { t: TileSpec }) {
           acc += len
           return el
         })}
-        <text x="50" y="54" textAnchor="middle" fontSize="16" fontWeight="600" fill="#242424">{t.metric === 'count' ? total : ''}</text>
+        <text x="50" y="54" textAnchor="middle" fontSize="16" fontWeight="600" fill="#ececec">{t.metric === 'count' ? total : ''}</text>
       </svg>
       <div className="legend">
         {data.map((d, i) => <div key={d.label}><i style={{ background: PALETTE[i % PALETTE.length] }} />{d.label} <b style={{ marginLeft: 'auto' }}>{value(t, d.value)}</b></div>)}

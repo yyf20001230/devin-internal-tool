@@ -63,6 +63,7 @@ class TileSpec(BaseModel):
     title: str
     metric: Literal["count", "sum", "avg"] = "count"
     field: str | None = None  # sum/avg field, or group-by field
+    value_field: str | None = None  # sum/avg field when grouping (defaults to field)
     date_field: str | None = None
     days: int = 14
     filter: Filter = {}
@@ -105,7 +106,7 @@ class ToolSpec(BaseModel):
                 if k not in names:
                     raise ValueError(f"action '{a.id}' sets unknown field '{k}'")
         for t in self.dashboard:
-            for f in (t.field, t.date_field):
+            for f in (t.field, t.value_field, t.date_field):
                 if f and f not in names:
                     raise ValueError(f"tile '{t.title}' references unknown field '{f}'")
         return self

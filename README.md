@@ -1,12 +1,12 @@
 # Internal Tools Platform — a Power Apps alternative built with Devin
 
-Prototype (built in ~2h) exploring how a fintech engineering team could use **Devin Cloud**
+Prototype (built in ~1h) exploring how a fintech engineering team could use **Devin Cloud**
 to get the thing Power Apps actually sells — *"describe a table, get a governed back-office
 app"* — while keeping everything in a normal code repo.
 
 ```
 tools/kyc_queue.yaml      ─┐
-tools/refunds.yaml         ├─►  server/ (FastAPI + SQLite)  ─►  web/ (React, Power Apps "new look" style)
+tools/refunds.yaml         ├─►  server/ (FastAPI + SQLite)  ─►  web/ (React, dark theme)
 tools/feature_flags.yaml  ─┘        generic API: records, actions, dashboard, audit, export
 tools/_users.yaml                   roles + column-level security + audit log
 .devin/playbooks/new-internal-tool.md   ← Devin is the "maker": request → YAML → PR

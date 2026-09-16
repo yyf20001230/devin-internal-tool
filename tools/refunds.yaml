@@ -81,7 +81,7 @@ dashboard:
   - {type: kpi, title: Awaiting value, metric: sum, field: amount, format: money, filter: {status: Awaiting approval}}
   - {type: series, title: Refund value by day, metric: sum, field: amount, date_field: requested_at, days: 14, chart: bar, format: money}
   - {type: group, title: Top refund reasons (30d), field: reason, chart: hbar, filter: {requested_at: {gte: now-30d}}}
-  - {type: group, title: By rail, field: rail, metric: sum, chart: donut, format: money}
+  - {type: group, title: Value by rail (30d), field: rail, metric: sum, value_field: amount, chart: donut, format: money, filter: {requested_at: {gte: now-30d}}}
 
 permissions:
   read: [payments_ops, finance, readonly, engineer]

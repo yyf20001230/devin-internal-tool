@@ -212,7 +212,7 @@ export default function App() {
                   ))}
                 </div>
               )}
-              {sel && !paneOpen && <div className="sub" style={{ color: '#616161', marginTop: 8 }}>Selected {String(sel[tool!.title_field])} — double-click to open, or use the command bar.</div>}
+              {sel && !paneOpen && <div className="sub" style={{ color: '#8b8b90', marginTop: 8 }}>Selected {String(sel[tool!.title_field])} — double-click to open, or use the command bar.</div>}
             </div>
             {paneOpen && tool && (
               <RecordPane tool={tool} record={sel} toast={toast} onClose={() => setPaneOpen(false)}
