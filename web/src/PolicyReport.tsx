@@ -24,7 +24,7 @@ function rule(r: CheckResult['rule']): string {
   }).join(' and ')
 }
 
-function Check({ c }: { c: CheckResult }) {
+export function Check({ c }: { c: CheckResult }) {
   const [open, setOpen] = useState(false)
   return (
     <div className={`chk ${CHECK_CLASS[c.outcome]}`}>
@@ -36,6 +36,7 @@ function Check({ c }: { c: CheckResult }) {
         <Icon name="chevron" size={12} className={`chev ${open ? 'open' : ''}`} />
       </div>
       <div className="chk-detail">
+        <span>{c.detail}</span>
         <span className="ev-vals">{Object.entries(c.evidence).map(([k, v]) => <code key={k}>{k}={fmt(v)}</code>)}</span>
         <span className="ev-rule">rule: {rule(c.rule)}</span>
       </div>
@@ -47,12 +48,11 @@ function Check({ c }: { c: CheckResult }) {
 }
 
 function Item({ item, onOpen }: { item: AutoReviewItem; onOpen: (id: number) => void }) {
-  const [open, setOpen] = useState(item.outcome === 'escalated')
   const o = OUTCOME[item.outcome]
   const decisive = item.checks.filter(c => item.outcome === 'cleared' ? c.passed : !c.passed)
   return (
     <div className={`rep-item ${o.colour}`}>
-      <div className="rep-row" onClick={() => setOpen(v => !v)}>
+      <div className="rep-row" onClick={() => onOpen(item.record_id)} title="Open the record to see every check, the values it was judged on and the clause text">
         <Icon name={o.icon} className={o.colour} />
         <b className="rep-title">{item.title}</b>
         <span className={`pill ${o.colour}`}>{o.label}</span>
@@ -62,19 +62,20 @@ function Item({ item, onOpen }: { item: AutoReviewItem; onOpen: (id: number) => 
           {' · '}{decisive.map(c => c.clause).join(', ')}
         </span>
         <button type="button" className="link" onClick={e => { e.stopPropagation(); onOpen(item.record_id) }}>open</button>
-        <Icon name="chevron" size={12} className={`chev ${open ? 'open' : ''}`} />
       </div>
-      {open && <div className="rep-checks">{item.checks.map(c => <Check key={c.id} c={c} />)}</div>}
     </div>
   )
 }
 
-export function PolicyReport({ result, rows, onOpen, onClose }: {
+export function PolicyReport({ result, rows, onOpen, onClose, onResetAll }: {
   result: AutoReviewResult; rows: Rec[]; onOpen: (r: Rec | null, id: number) => void; onClose: () => void
+  onResetAll: (() => Promise<void>) | null
 }) {
   const [filter, setFilter] = useState<AutoOutcome | null>(null)
+  const [resetting, setResetting] = useState(false)
   const counts = { cleared: result.cleared.length, escalated: result.flagged.length, review: result.review.length }
   const items = result.items.filter(i => !filter || i.outcome === filter)
+  const acted = result.items.filter(i => i.action).length
   return (
     <section className="report">
       <div className="ai-head">
@@ -91,7 +92,14 @@ export function PolicyReport({ result, rows, onOpen, onClose }: {
             <b>{counts[k]}</b> {OUTCOME[k].label.toLowerCase()}
           </button>
         ))}
-        <span className="sub">Expand a record to see each check, the values it was judged on, and the policy clause it cites.</span>
+        <span className="sub">Open a record to see each check, the values it was judged on, and the policy clause it cites.</span>
+        <span className="spacer" />
+        {onResetAll && acted > 0 && (
+          <button className="btn small secondary" disabled={resetting} title="Undo every automated decision still in force on this tool"
+            onClick={async () => { setResetting(true); try { await onResetAll() } finally { setResetting(false) } }}>
+            <Icon name="undo" />Reset all AI decisions
+          </button>
+        )}
       </div>
       {items.length === 0 && <div className="sub">Nothing in this bucket.</div>}
       {items.map(i => <Item key={i.record_id} item={i} onOpen={id => onOpen(rows.find(r => r.id === id) ?? null, id)} />)}

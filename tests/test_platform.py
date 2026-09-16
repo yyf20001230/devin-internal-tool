@@ -269,6 +269,37 @@ def test_auto_review_clears_flags_and_leaves_the_rest_for_humans(client):
     assert client.post("/api/tools/kyc/auto-review", headers=h("marcus")).json()["cleared"] == []  # idempotent
 
 
+def test_humans_can_reset_ai_decisions_one_or_all(client):
+    decided = client.get("/api/tools/kyc/ai-decisions", headers=h("marcus")).json()["records"]
+    assert decided, "auto-review above should have changed some records"
+    rid = decided[0]
+    review = client.get(f"/api/tools/kyc/records/{rid}/review", headers=h("marcus")).json()
+    d = review["ai_decision"]
+    assert d["actor"] == "devin-ai" and d["action"] in ("auto_approve", "auto_escalate") and d["before"]
+    # readonly cannot reset; an analyst can, and the record goes back to its pre-AI values
+    assert client.post("/api/tools/kyc/ai-reset", json={"record_id": rid}, headers=h("auditor")).status_code == 403
+    res = client.post("/api/tools/kyc/ai-reset", json={"record_id": rid, "comment": "false positive"}, headers=h("priya"))
+    assert res.status_code == 200
+    after = client.get(f"/api/tools/kyc/records/{rid}", headers=h("marcus")).json()
+    assert all(after[k] == v for k, v in d["before"].items())
+    trail = client.get(f"/api/tools/kyc/audit?record_id={rid}", headers=h("marcus")).json()
+    assert trail[0]["action"] == "ai-reset" and trail[0]["user_id"] == "priya"
+    assert "auto_" in trail[0]["comment"] and "false positive" in trail[0]["comment"]
+    # once reset there is nothing left to undo on that record; a second reset is rejected
+    assert client.get(f"/api/tools/kyc/records/{rid}/review", headers=h("marcus")).json()["ai_decision"] is None
+    assert client.post("/api/tools/kyc/ai-reset", json={"record_id": rid}, headers=h("priya")).status_code == 400
+    # a human decision after the AI's is never undone by a bulk reset
+    other = next(i for i in decided if i != rid
+                 and client.get(f"/api/tools/kyc/records/{i}", headers=h("marcus")).json()["status"] == "Escalated")
+    assert client.post("/api/tools/kyc/actions/reject", json={"record_id": other, "comment": "human call"},
+                       headers=h("marcus")).status_code == 200
+    rest = client.post("/api/tools/kyc/ai-reset", json={"comment": "rerun after policy change"}, headers=h("marcus")).json()
+    assert set(rest["reset"]) == set(decided) - {rid, other}
+    assert client.get(f"/api/tools/kyc/records/{other}", headers=h("marcus")).json()["status"] == "Rejected"
+    assert client.get("/api/tools/kyc/ai-decisions", headers=h("marcus")).json()["records"] == []
+    assert client.get("/api/tools/kyc/audit", headers=h("marcus")).json()[0]["action"] == "ai-reset:all"
+
+
 def test_refund_auto_review_only_approves_small_eligible_refunds(client):
     summary = client.post("/api/tools/refunds/auto-review", headers=h("sofia")).json()
     for r in client.get("/api/tools/refunds/records?view=approved", headers=h("dan")).json():

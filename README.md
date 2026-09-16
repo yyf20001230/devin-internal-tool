@@ -53,7 +53,12 @@ platform code, all governance tests inherited.
   rendered in the same grid, audited as `ai:query`.
 - **Policy automation**: each record is checked against cited clauses (KYC-2.1, RF-4.1, …).
   All checks pass → `devin-ai` runs the tool's clear action; a `flag` check fails → escalates;
-  anything else stays for a human, with the clauses shown in the pane.
+  anything else stays for a human, with the clauses shown in the pane. Every run returns an
+  evidence report (outcome, action, clause codes per record); opening the record shows each
+  check, the values it was judged on, the rule and the clause text. Humans with `update` rights
+  can undo an automated decision per record (**Reset AI decision**) or all at once
+  (`POST /ai-reset`): the pre-review values are restored and the reset is audited as the human,
+  never over a later human decision.
 - **Providers**: `OPENAI_API_KEY` present → OpenAI (`OPENAI_MODEL`, default `gpt-4o-mini`),
   strict-JSON, schema-validated, falls back automatically on error / quota. Absent → a
   deterministic rules provider, so the demo and tests never depend on a network call.

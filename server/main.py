@@ -30,6 +30,11 @@ class SummaryBody(BaseModel):
     record_id: int
 
 
+class ResetBody(BaseModel):
+    record_id: int | None = None  # None resets every automated decision still in force
+    comment: str | None = None
+
+
 class QueryBody(BaseModel):
     question: str
     view: str | None = None
@@ -153,7 +158,18 @@ def build_app(tools_dir: Path = TOOLS_DIR, db_path: Path | str = DB_PATH,
         res = engine.record_review(spec, user, rid)
         cite(res["checks"])
         res["policy"] = spec.auto_review.policy if spec.auto_review else None
+        res["ai_decision"] = engine.ai_decision(spec, rid)
         return res
+
+    @app.get("/api/tools/{tool_id}/ai-decisions")
+    def ai_decisions(spec: ToolSpec = Depends(tool), user: User = Depends(current_user)):
+        return {"records": engine.ai_decided(spec, user)}
+
+    @app.post("/api/tools/{tool_id}/ai-reset")
+    def ai_reset(body: ResetBody, spec: ToolSpec = Depends(tool), user: User = Depends(current_user)):
+        if body.record_id is None:
+            return engine.reset_ai_all(spec, user, body.comment)
+        return {"reset": [body.record_id], "record": engine.reset_ai(spec, user, body.record_id, body.comment)}
 
     @app.post("/api/tools/{tool_id}/auto-review")
     def auto_review(spec: ToolSpec = Depends(tool), user: User = Depends(current_user),

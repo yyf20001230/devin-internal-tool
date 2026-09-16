@@ -34,7 +34,11 @@ export interface CheckResult {
   rule: Filter; evidence: Record<string, unknown>
   clause_title: string; clause_text: string; policy: string
 }
-export interface Review { verdict: Verdict; policy: string | null; checks: CheckResult[] }
+export interface AIDecision {
+  audit_id: number; action: string; actor: string; ts: string; reason: string | null
+  before: Record<string, unknown>; after: Record<string, unknown>
+}
+export interface Review { verdict: Verdict; policy: string | null; checks: CheckResult[]; ai_decision: AIDecision | null }
 export type AutoOutcome = 'cleared' | 'escalated' | 'review'
 export interface AutoReviewItem {
   record_id: number; title: string; outcome: AutoOutcome; verdict: Verdict; action: string | null; reason: string
@@ -96,6 +100,9 @@ export const api = {
   exportCsv: (id: string, view: string) => req<string>(`/api/tools/${id}/records.csv?view=${view}`),
   review: (id: string, rid: number) => req<Review>(`/api/tools/${id}/records/${rid}/review`),
   autoReview: (id: string, view: string) => req<AutoReviewResult>(`/api/tools/${id}/auto-review?view=${view}`, { method: 'POST' }),
+  aiDecisions: (id: string) => req<{ records: number[] }>(`/api/tools/${id}/ai-decisions`),
+  aiReset: (id: string, rid: number | null, comment: string | null) =>
+    req<{ reset: number[]; record?: Rec }>(`/api/tools/${id}/ai-reset`, { method: 'POST', body: JSON.stringify({ record_id: rid, comment }) }),
   knowledge: () => req<KnowledgeSummary[]>('/api/knowledge'),
   knowledgeDoc: (id: string) => req<KnowledgeDoc>(`/api/knowledge/${id}`),
   summary: (id: string, rid: number) => req<Summary>(`/api/tools/${id}/ai/summary`, { method: 'POST', body: JSON.stringify({ record_id: rid }) }),

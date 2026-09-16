@@ -414,6 +414,66 @@ class Engine:
                 "flagged": [i["title"] for i in items if i["outcome"] == "escalated"],
                 "review": [i["title"] for i in items if i["outcome"] == "review"]}
 
+    def ai_decision(self, spec: ToolSpec, rid: int) -> dict | None:
+        """The automated action currently in force on a record: the latest state change was made by the
+        auto-review actor and no human has acted or reset since. None when there is nothing to undo."""
+        ar = spec.auto_review
+        if ar is None:
+            return None
+        row = self.conn.execute(
+            "SELECT * FROM audit_log WHERE tool=? AND record_id=? AND (action LIKE 'action:%' OR action='ai-reset') "
+            "ORDER BY id DESC LIMIT 1",
+            (spec.id, rid),
+        ).fetchone()
+        if row is None or row["user_id"] != ar.actor or not row["action"].startswith("action:"):
+            return None
+        return {"audit_id": row["id"], "action": row["action"][len("action:"):], "actor": row["user_id"],
+                "ts": row["ts"], "before": json.loads(row["before"]), "after": json.loads(row["after"]),
+                "reason": row["comment"]}
+
+    def ai_decided(self, spec: ToolSpec, user: User) -> list[int]:
+        """Records whose current state was set by the auto-review actor (bulk-reset candidates)."""
+        self.require(spec, user, "read")
+        ar = spec.auto_review
+        if ar is None:
+            return []
+        ids = self.conn.execute(
+            "SELECT DISTINCT record_id FROM audit_log WHERE tool=? AND user_id=? AND action LIKE 'action:%' "
+            "AND record_id IS NOT NULL", (spec.id, ar.actor),
+        ).fetchall()
+        return [r["record_id"] for r in ids if self.ai_decision(spec, r["record_id"]) is not None]
+
+    def reset_ai(self, spec: ToolSpec, user: User, rid: int, comment: str | None) -> dict:
+        """Undo the automated decision on a record: restore the values it changed, audited as the human."""
+        self.require(spec, user, "update")
+        d = self.ai_decision(spec, rid)
+        if d is None:
+            raise Invalid("No automated decision to reset on this record")
+        current = self._raw(spec, rid)
+        restore = d["before"]
+        sets = ", ".join(f"{k}=?" for k in restore)
+        self.conn.execute(
+            f"UPDATE {spec.entity} SET {sets}, updated_at=? WHERE id=?",
+            [*restore.values(), now().isoformat(timespec="seconds"), rid],
+        )
+        note = f"Reset automated '{d['action']}' by {d['actor']} ({d['ts']}); restored {restore}."
+        self._audit(spec, rid, user, "ai-reset", f"{note} {comment}".strip() if comment else note,
+                    {k: current[k] for k in restore}, restore)
+        self.conn.commit()
+        return self._mask(spec, user, self._raw(spec, rid))
+
+    def reset_ai_all(self, spec: ToolSpec, user: User, comment: str | None) -> dict:
+        self.require(spec, user, "update")
+        ids = self.ai_decided(spec, user)
+        for rid in ids:
+            self.reset_ai(spec, user, rid, comment)
+        ar = spec.auto_review
+        self._audit(spec, None, user, "ai-reset:all",
+                    f"Reset {len(ids)} automated decision(s) by {ar.actor if ar else '?'}. {comment or ''}".strip(),
+                    None, None)
+        self.conn.commit()
+        return {"reset": ids}
+
     def _try_action(self, spec: ToolSpec, actor: User, action_id: str, rid: int, comment: str) -> bool:
         try:
             self.run_action(spec, actor, action_id, rid, comment)

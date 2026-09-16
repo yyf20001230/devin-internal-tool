@@ -3,6 +3,7 @@ import type { ActionSpec, AuditEntry, FieldSpec, Rec, Review, Summary, ToolSpec 
 import { api, fmt } from './api'
 import { pillColour } from './Cell'
 import { Icon, actionIcon } from './Icon'
+import { Check } from './PolicyReport'
 
 interface Props {
   tool: ToolSpec
@@ -38,23 +39,21 @@ function Input({ f, v, onChange, disabled }: { f: FieldSpec; v: unknown; onChang
   }
 }
 
-const OUTCOME_ICON = { pass: 'check', review: 'alert', flag: 'x' } as const
-const OUTCOME_CLASS = { pass: 'green', review: 'amber', flag: 'red' } as const
 
 export function RecordPane({ tool, record, actions, actionEnabled, onAction, onClose, onSaved, toast }: Props) {
   const [values, setValues] = useState<Record<string, unknown>>({})
   const [audit, setAudit] = useState<AuditEntry[]>([])
   const [review, setReview] = useState<Review | null>(null)
   const [summary, setSummary] = useState<Summary | null>(null)
-  const [openClause, setOpenClause] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [err, setErr] = useState('')
   const [saving, setSaving] = useState(false)
+  const [resetting, setResetting] = useState(false)
   const isNew = record === null
   const hasPolicy = tool.checks.length > 0
 
   useEffect(() => {
-    setErr(''); setReview(null); setSummary(null); setOpenClause(null)
+    setErr(''); setReview(null); setSummary(null)
     if (record) {
       setValues({ ...record }); setShowForm(false)
       api.audit(tool.id, record.id).then(setAudit).catch(() => setAudit([]))
@@ -80,6 +79,17 @@ export function RecordPane({ tool, record, actions, actionEnabled, onAction, onC
       const r = record ? await api.update(tool.id, record.id, payload) : await api.create(tool.id, payload)
       toast(record ? 'Saved' : 'Created'); onSaved(r)
     } catch (e) { setErr((e as Error).message) } finally { setSaving(false) }
+  }
+
+  async function resetAI() {
+    if (!record || !review?.ai_decision) return
+    const note = window.prompt(`Undo Devin AI's '${review.ai_decision.action}' on this record? Optional reason:`, '')
+    if (note === null) return
+    setResetting(true)
+    try {
+      const res = await api.aiReset(tool.id, record.id, note || null)
+      toast('AI decision reset'); if (res.record) onSaved(res.record)
+    } catch (e) { toast((e as Error).message, true) } finally { setResetting(false) }
   }
 
   const title = record ? String(record[tool.title_field]) : `New ${tool.entity.replace('_', ' ')}`
@@ -113,6 +123,32 @@ export function RecordPane({ tool, record, actions, actionEnabled, onAction, onC
         </div>
       )}
 
+      {record && review?.ai_decision && (
+        <section className="ai-decision">
+          <div className="ai-head">
+            <Icon name="sparkle" />
+            <span>Decided by {review.ai_decision.actor}</span>
+            <span className="spacer" />
+            <span className="sub">{review.ai_decision.action} · {fmt.dt(review.ai_decision.ts)}</span>
+          </div>
+          <div className="ai-diff">
+            {Object.keys(review.ai_decision.after).filter(k => review.ai_decision!.before[k] !== review.ai_decision!.after[k]).map(k => (
+              <span key={k} className="ev-vals">
+                <code>{k}: {String(review.ai_decision!.before[k])} → {String(review.ai_decision!.after[k])}</code>
+              </span>
+            ))}
+          </div>
+          {tool.can.update ? (
+            <div className="ai-reset-row">
+              <button className="btn small secondary" disabled={resetting} onClick={resetAI}>
+                <Icon name="undo" />Reset AI decision
+              </button>
+              <span className="sub">Restores the values above; logged in the audit trail under your name.</span>
+            </div>
+          ) : <div className="sub">Only users with update rights can reset this.</div>}
+        </section>
+      )}
+
       {record && hasPolicy && (
         <section className="ai">
           <div className="ai-head">
@@ -139,19 +175,7 @@ export function RecordPane({ tool, record, actions, actionEnabled, onAction, onC
             {review && <span className={`pill ${pillColour(review.verdict)}`}>{review.verdict}</span>}
           </div>
           {!review && <div className="sub">Running checks…</div>}
-          {review?.checks.map(c => (
-            <div key={c.id} className={`chk ${OUTCOME_CLASS[c.outcome]}`}>
-              <div className="chk-row" onClick={() => setOpenClause(openClause === c.id ? null : c.id)}>
-                <Icon name={OUTCOME_ICON[c.outcome]} className={OUTCOME_CLASS[c.outcome]} />
-                <span className="chk-title">{c.title}</span>
-                <span className="clause">{c.clause}</span>
-              </div>
-              <div className="chk-detail">{c.detail}</div>
-              {openClause === c.id && (
-                <div className="clause-text"><b>{c.clause} {c.clause_title}</b><br />{c.clause_text}</div>
-              )}
-            </div>
-          ))}
+          {review?.checks.map(c => <Check key={c.id} c={c} />)}
           {review && (
             <div className="sub" style={{ marginTop: 6 }}>
               {review.verdict === 'Cleared' && 'All checks passed — eligible for automatic clearance.'}

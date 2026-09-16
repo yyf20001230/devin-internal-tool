@@ -209,9 +209,17 @@ td .link { color: var(--text); font-weight: 600; }
 .chk-row:hover .chk-title { color: var(--text); }
 .chk-title { color: var(--text-2); font-weight: 600; flex: 1; }
 .clause { color: var(--muted); font-size: 11px; font-family: ui-monospace, monospace; }
-.chk-detail { color: var(--muted); margin-top: 2px; }
+.chk-detail { color: var(--muted); margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
 .clause-text { margin-top: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 8px; color: var(--text-2); line-height: 1.5; }
 .clause-text .src-doc { color: var(--muted); font-size: 11px; font-family: ui-monospace, monospace; margin-left: 6px; }
+
+.ai-decision { background: rgba(176,131,240,.08); border: 1px solid rgba(176,131,240,.35); border-radius: 8px; padding: 10px 12px; }
+.ai-decision .ai-head { margin-bottom: 6px; }
+.ai-decision .ai-head .icon { color: var(--purple); }
+.ai-decision .ai-head > span:first-of-type { white-space: nowrap; }
+.ai-decision .ai-head .sub { text-transform: none; letter-spacing: 0; font-weight: 400; font-family: ui-monospace, monospace; }
+.ai-diff { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.ai-reset-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 /* Devin AI policy review report */
 .report { background: var(--bg-2); border: 1px solid rgba(176,131,240,.35); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; }
@@ -231,8 +239,6 @@ td .link { color: var(--text); font-weight: 600; }
 .rep-row .rep-why { color: var(--muted); flex: 1; font-size: 12px; }
 .rep-row .link { background: none; border: 0; color: var(--blue); cursor: pointer; font-size: 12px; padding: 0 4px; }
 .rep-row .link:hover { text-decoration: underline; }
-.rep-checks { margin-top: 6px; padding-left: 4px; }
-.rep-checks .chk-detail { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
 .chev { color: var(--muted); transition: transform .15s; transform: rotate(-90deg); }
 .chev.open { transform: rotate(0); }
 .ev { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .3px; }

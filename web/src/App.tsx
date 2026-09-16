@@ -87,6 +87,7 @@ export default function App() {
   const [ai, setAi] = useState<AIStatus | null>(null)
   const [autoResult, setAutoResult] = useState<AutoReviewResult | null>(null)
   const [autoRunning, setAutoRunning] = useState(false)
+  const [aiDecided, setAiDecided] = useState<number[]>([])
   const menuRef = useRef<HTMLDivElement>(null)
 
   const toast = useCallback((msg: string, err = false) => {
@@ -128,6 +129,8 @@ export default function App() {
     if (!tool || !viewId) return
     const [r, d, i] = await Promise.all([api.records(tool.id, viewId, q), api.dashboard(tool.id), api.integrations(tool.id)])
     setRows(r); setTiles(d); setIntegrations(i)
+    if (tool.auto_review) api.aiDecisions(tool.id).then(x => setAiDecided(x.records)).catch(() => setAiDecided([]))
+    else setAiDecided([])
     if (sel) {
       const still = r.find(x => x.id === sel.id)
       if (still) setSel(still)
@@ -193,6 +196,16 @@ export default function App() {
       toast(`Devin AI: ${r.cleared.length} cleared, ${r.flagged.length} escalated, ${r.review.length} left for you`)
       refresh()
     } catch (e) { toast((e as Error).message, true) } finally { setAutoRunning(false) }
+  }
+
+  async function resetAllAI() {
+    if (!tool) return
+    const note = window.prompt(`Undo all ${aiDecided.length} automated decision(s) by ${tool.auto_review?.actor ?? 'devin-ai'} still in force? Records go back to their previous status. Optional reason:`, '')
+    if (note === null) return
+    try {
+      const r = await api.aiReset(tool.id, null, note || null)
+      toast(`Reset ${r.reset.length} AI decision(s)`); setAutoResult(null); refresh()
+    } catch (e) { toast((e as Error).message, true) }
   }
 
   async function runAsk(e?: React.FormEvent) {
@@ -284,6 +297,11 @@ export default function App() {
                 <Icon name="sparkle" />{autoRunning ? 'Reviewing…' : 'Run policy checks'}
               </button>
             )}
+            {tool?.auto_review && tool.can.update && aiDecided.length > 0 && (
+              <button className="btn secondary" onClick={resetAllAI} title={`${aiDecided.length} record(s) currently sit in a status set by ${tool.auto_review.actor}; undo them all`}>
+                <Icon name="undo" />Reset AI decisions ({aiDecided.length})
+              </button>
+            )}
             <button className="btn secondary" disabled={!tool?.can.create} onClick={() => { setSel(null); setPaneOpen(true) }}><Icon name="plus" />New</button>
             <button className="btn secondary" onClick={refresh}><Icon name="refresh" />Refresh</button>
             <button className="btn secondary" disabled={!tool?.can.export} onClick={exportCsv} title={tool?.can.export ? 'Logged to the audit trail' : 'Export privilege not granted to your role'}>
@@ -299,6 +317,7 @@ export default function App() {
               )}
               {autoResult && tool && (
                 <PolicyReport result={autoResult} rows={rows} onClose={() => setAutoResult(null)}
+                  onResetAll={tool.can.update ? resetAllAI : null}
                   onOpen={async (r, id) => {
                     try { setSel(r ?? await api.record(tool.id, id)); setPaneOpen(true) }
                     catch (e) { toast((e as Error).message, true) }
