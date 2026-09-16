@@ -39,7 +39,8 @@ here (KYC review queue, refunds dashboard, feature-flag admin) are ~90 lines of 
 pip install fastapi "uvicorn[standard]" pyyaml pytest httpx
 python -m server.seed                          # rebuild data.db with demo data
 uvicorn server.main:app --port 8000 --reload   # API
-npm --prefix web install && npm --prefix web run dev   # UI on http://localhost:5173 (proxies /api)
+npm --prefix web install && npm --prefix web run dev   # UI dev server on http://localhost:5173 (proxies /api)
+# or single-port: npm --prefix web run build && uvicorn server.main:app --port 8000   # UI + API on :8000
 python -m pytest -q                            # governance tests, parameterised over every tool
 ```
 
