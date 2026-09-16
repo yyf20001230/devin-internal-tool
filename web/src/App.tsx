@@ -4,6 +4,7 @@ import { ApiError, api, fmt, getUser, signIn, signOut } from './api'
 import { Cell, isNumeric } from './Cell'
 import { Dashboard } from './Dashboard'
 import { Icon, actionIcon } from './Icon'
+import { PolicyReport } from './PolicyReport'
 import { RecordPane } from './RecordPane'
 
 type Pending = { action: ActionSpec; record: Rec; comment: string }
@@ -76,7 +77,6 @@ export default function App() {
   const [integrations, setIntegrations] = useState<IntegrationEntry[]>([])
   const [sel, setSel] = useState<Rec | null>(null)
   const [paneOpen, setPaneOpen] = useState(false)
-  const [tab, setTab] = useState<'dashboard' | 'grid'>('dashboard')
   const [pending, setPending] = useState<Pending | null>(null)
   const [toastMsg, setToastMsg] = useState<{ msg: string; err: boolean } | null>(null)
   const [sort, setSort] = useState<Sort>(null)
@@ -121,7 +121,6 @@ export default function App() {
     localStorage.setItem('tool', toolId)
     api.tool(toolId).then(t => {
       setTool(t); setViewId(t.views[0]?.id ?? ''); setSel(null); setPaneOpen(false); setSort(null); setNl(null); setAsk(''); setAutoResult(null)
-      setTab(t.dashboard.length ? 'dashboard' : 'grid')
     }).catch(e => toast(e.message, true))
   }, [toolId, authed, toast])
 
@@ -275,22 +274,10 @@ export default function App() {
                 {tool.name}
               </h1>
               <span className="desc">{tool.description}</span>
-              <div className="spacer" />
-              <div className="tabs">
-                <button className={tab === 'dashboard' ? 'active' : ''} onClick={() => setTab('dashboard')}>Dashboard</button>
-                <button className={tab === 'grid' ? 'active' : ''} onClick={() => setTab('grid')}>Queue</button>
-              </div>
             </div>
           )}
 
           <div className="cmdbar">
-            <div className="views">
-              {tool?.views.map(v => (
-                <button key={v.id} className={`view ${v.id === viewId ? 'active' : ''}`} onClick={() => { setViewId(v.id); setSel(null); setSort(null); setNl(null); setAsk(''); setAutoResult(null) }}>
-                  {v.name}
-                </button>
-              ))}
-            </div>
             <div className="spacer" />
             {tool?.auto_review && (
               <button className="btn ai-btn" disabled={autoRunning} onClick={runAutoReview} title={`Run ${tool.auto_review.policy.replace(/_/g, ' ')} checks over this queue; clears or escalates what the policy settles, as the Devin AI service account`}>
@@ -306,20 +293,25 @@ export default function App() {
 
           <div className={`content ${paneOpen ? '' : 'no-pane'}`}>
             <div>
-              {tool && tab === 'dashboard' && <Dashboard tiles={tiles} />}
+              {tool && <Dashboard tiles={tiles} />}
               {prodWarn > 0 && (
                 <div className="banner"><Icon name="alert" />{prodWarn} flag(s) are on in PROD without an approved change request. Policy requires a CR before PROD enablement.</div>
               )}
-              {autoResult && (
-                <div className="banner info">
-                  <Icon name="sparkle" />
-                  <span><b>Devin AI</b> reviewed this queue against policy: <b className="green">{autoResult.cleared.length} cleared</b>{autoResult.cleared.length ? ` (${autoResult.cleared.join(', ')})` : ''} ·{' '}
-                    <b className="red">{autoResult.flagged.length} escalated</b>{autoResult.flagged.length ? ` (${autoResult.flagged.join(', ')})` : ''} ·{' '}
-                    <b className="amber">{autoResult.review.length} left for human review</b>. Every automated decision is in the audit trail as <code>devin-ai</code>.</span>
-                  <button className="iconbtn" onClick={() => setAutoResult(null)}><Icon name="x" size={13} /></button>
-                </div>
+              {autoResult && tool && (
+                <PolicyReport result={autoResult} rows={rows} onClose={() => setAutoResult(null)}
+                  onOpen={async (r, id) => {
+                    try { setSel(r ?? await api.record(tool.id, id)); setPaneOpen(true) }
+                    catch (e) { toast((e as Error).message, true) }
+                  }} />
               )}
               <div className="grid-wrap">
+                <div className="views">
+                  {tool?.views.map(v => (
+                    <button key={v.id} className={`view ${v.id === viewId ? 'active' : ''}`} onClick={() => { setViewId(v.id); setSel(null); setSort(null); setNl(null); setAsk(''); setAutoResult(null) }}>
+                      {v.name}
+                    </button>
+                  ))}
+                </div>
                 <form className="grid-head" onSubmit={runAsk}>
                   <div className={`ask ${nl ? 'on' : ''}`}>
                     <Icon name="sparkle" size={14} />

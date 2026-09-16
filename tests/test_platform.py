@@ -246,18 +246,26 @@ def test_auto_review_clears_flags_and_leaves_the_rest_for_humans(client):
               if r["status"] in ("Pending", "In review")}
     assert client.post("/api/tools/kyc/auto-review", headers=h("auditor")).status_code == 403
     summary = client.post("/api/tools/kyc/auto-review", headers=h("marcus")).json()
-    assert set(summary) == {"cleared", "flagged", "review"}
+    assert {"cleared", "flagged", "review", "items", "policy", "actor"} <= set(summary)
+    assert summary["policy"] == "kyc_review_policy" and summary["actor"] == "devin-ai"
     assert sorted(summary["cleared"] + summary["flagged"] + summary["review"]) == sorted(r["case_id"] for r in before.values())
+    items = {i["record_id"]: i for i in summary["items"]}
     for rid, r in before.items():
         after = client.get(f"/api/tools/kyc/records/{rid}", headers=h("marcus")).json()
         trail = client.get(f"/api/tools/kyc/audit?record_id={rid}", headers=h("marcus")).json()
+        item = items[rid]
+        # every decision is evidenced: each check cites a KB clause with its text and the values judged
+        assert all(c["clause_text"] and c["clause_title"] and c["evidence"] for c in item["checks"])
+        assert trail[0]["user_id"] == "devin-ai"
         if r["policy_verdict"] == "Cleared":
-            assert after["status"] == "Approved" and trail[0]["user_id"] == "devin-ai"
-            assert "KYC-2.1" in trail[0]["comment"] and "KYC-4.2" in trail[0]["comment"]
+            assert after["status"] == "Approved" and item["outcome"] == "cleared" and item["action"] == "auto_approve"
+            assert "KYC-2.1" in trail[0]["comment"] and "KYC-4.2" in trail[0]["comment"] and "sanctions_hit=False" in trail[0]["comment"]
         elif r["policy_verdict"] == "Flagged":
-            assert after["status"] == "Escalated" and after["risk"] == "High" and trail[0]["user_id"] == "devin-ai"
+            assert after["status"] == "Escalated" and after["risk"] == "High" and item["outcome"] == "escalated"
+            assert "KYC-2.1" in trail[0]["comment"] and "FAILED" in trail[0]["comment"]
         else:
-            assert after["status"] == r["status"] and not trail
+            assert after["status"] == r["status"] and item["outcome"] == "review" and item["action"] is None
+            assert trail[0]["action"] == "auto-review:hold" and "FAILED" in trail[0]["comment"]
     assert client.post("/api/tools/kyc/auto-review", headers=h("marcus")).json()["cleared"] == []  # idempotent
 
 

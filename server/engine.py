@@ -35,6 +35,12 @@ def now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _cite(check: dict) -> str:
+    """One-line citation for an audit comment: clause, verdict and the values it was judged on."""
+    values = ", ".join(f"{k}={v}" for k, v in check["evidence"].items())
+    return f"{check['clause']} {check['title']} {'passed' if check['passed'] else 'FAILED'} ({values})"
+
+
 def sign_payload(payload: dict) -> str:
     """HMAC for outbound webhooks. The secret comes from the environment (Devin secrets store /
     deployment secret manager) and is never read from YAML or committed files."""
@@ -336,55 +342,84 @@ class Engine:
         return [{**dict(r), "payload": json.loads(r["payload"])} for r in rows]
 
     # ---- policy checks -----------------------------------------------------------------
-    def review(self, spec: ToolSpec, record: dict) -> dict:
-        """Evaluate every policy check against a raw record. Pure; no permissions, no writes."""
+    def review(self, spec: ToolSpec, record: dict, viewer: User | None = None) -> dict:
+        """Evaluate every policy check against a raw record. Pure; no permissions, no writes.
+
+        Each result carries `evidence`: the record values the rule tested, masked for `viewer`
+        (so evidence never leaks a column the viewer may not see) and the rule itself."""
+        shown = self._mask(spec, viewer, {k: v for k, v in record.items() if k != "id"}) if viewer else dict(record)
+        for f in spec.fields:
+            if f.type == "boolean" and isinstance(shown.get(f.name), int):
+                shown[f.name] = bool(shown[f.name])
         results = []
         verdict = "Cleared"
         for c in spec.checks:
             ok = matches(c.when, record)
             results.append({"id": c.id, "clause": c.clause, "title": c.title, "passed": ok,
                             "outcome": "pass" if ok else c.on_fail,
-                            "detail": c.pass_text if ok else c.fail_text})
+                            "detail": c.pass_text if ok else c.fail_text,
+                            "rule": c.when,
+                            "evidence": {f: shown.get(f) for f in c.when}})
             if not ok:
                 verdict = "Flagged" if c.on_fail == "flag" or verdict == "Flagged" else "Needs review"
         return {"verdict": verdict, "checks": results}
 
     def record_review(self, spec: ToolSpec, user: User, rid: int) -> dict:
-        return self.review(spec, self.get_record(spec, user, rid, raw=True))
+        return self.review(spec, self.get_record(spec, user, rid, raw=True), viewer=user)
 
     def auto_review(self, spec: ToolSpec, user: User, actor: User, view_id: str | None = None) -> dict:
-        """Apply the policy: cleared records get clear_action, flagged get flag_action, the rest wait for a human."""
+        """Apply the policy: cleared records get clear_action, flagged get flag_action, the rest wait for a human.
+
+        Returns a per-record evidence report and writes one audit entry per record as `actor`,
+        including the ones left for a human, so every decision cites its clauses and values."""
         self.require(spec, user, "update")
         ar = spec.auto_review
         if ar is None:
             raise Invalid(f"{spec.name} has no auto-review policy")
         rows = self.list_records(spec, user, view_id, extra=ar.scope)
-        summary: dict[str, list[str]] = {"cleared": [], "flagged": [], "review": []}
+        items: list[dict] = []
         for r in rows:
             raw = self._raw(spec, r["id"])
-            res = self.review(spec, raw)
+            res = self.review(spec, raw, viewer=user)
             title = str(raw[spec.title_field])
             failed = [c for c in res["checks"] if not c["passed"]]
+            evidence = "; ".join(_cite(c) for c in res["checks"])
             if res["verdict"] == "Cleared" and ar.clear_action:
-                passed = ", ".join(c["clause"] for c in res["checks"])
-                self._try_action(spec, actor, ar.clear_action, raw["id"],
-                                 f"Auto-cleared by policy checks ({passed}); triggered by {user.name}")
-                summary["cleared"].append(title)
-            elif res["verdict"] == "Flagged" and ar.flag_action:
-                reasons = "; ".join(f"{c['clause']} {c['title']}" for c in failed if c["outcome"] == "flag")
-                self._try_action(spec, actor, ar.flag_action, raw["id"], f"Flagged by policy checks: {reasons}")
-                summary["flagged"].append(title)
+                outcome, action = "cleared", ar.clear_action
+                reason = f"All {len(res['checks'])} checks passed under {ar.policy}: {evidence}"
+                applied = self._try_action(spec, actor, action, raw["id"], f"Auto-cleared. {reason}. Run by {user.name}")
             elif res["verdict"] == "Flagged":
-                summary["flagged"].append(title)
+                blocking = [c for c in failed if c["outcome"] == "flag"]
+                outcome, action = "escalated", ar.flag_action
+                reason = (f"Mandatory control failed under {ar.policy}: "
+                          + "; ".join(_cite(c) for c in blocking))
+                applied = bool(action) and self._try_action(spec, actor, action, raw["id"],
+                                                              f"Auto-escalated. {reason}. Run by {user.name}")
             else:
-                summary["review"].append(title)
-        return summary
+                outcome, action, applied = "review", None, False
+                reason = (f"Not settled by {ar.policy}; needs a human on: "
+                          + "; ".join(_cite(c) for c in failed))
+                self._audit(spec, raw["id"], actor, "auto-review:hold", f"Left for human review. {reason}. Run by {user.name}", None, None)
+            items.append({"record_id": raw["id"], "title": title, "outcome": outcome, "verdict": res["verdict"],
+                          "action": action if applied else None, "reason": reason, "checks": res["checks"]})
+        self._audit(spec, None, actor, "auto-review:run",
+                    f"Reviewed {len(items)} record(s) in view '{view_id}' under {ar.policy}; "
+                    f"{sum(i['outcome'] == 'cleared' for i in items)} cleared, "
+                    f"{sum(i['outcome'] == 'escalated' for i in items)} escalated, "
+                    f"{sum(i['outcome'] == 'review' for i in items)} left for human review. Run by {user.name}",
+                    None, None)
+        self.conn.commit()
+        return {"policy": ar.policy, "actor": actor.id, "view": view_id, "items": items,
+                "cleared": [i["title"] for i in items if i["outcome"] == "cleared"],
+                "flagged": [i["title"] for i in items if i["outcome"] == "escalated"],
+                "review": [i["title"] for i in items if i["outcome"] == "review"]}
 
-    def _try_action(self, spec: ToolSpec, actor: User, action_id: str, rid: int, comment: str) -> None:
+    def _try_action(self, spec: ToolSpec, actor: User, action_id: str, rid: int, comment: str) -> bool:
         try:
             self.run_action(spec, actor, action_id, rid, comment)
+            return True
         except Invalid:
-            pass  # record no longer in the action's state; leave it
+            return False  # record no longer in the action's state; leave it
 
     # ---- dashboard -------------------------------------------------------------------
     def dashboard(self, spec: ToolSpec, user: User) -> list[dict]:

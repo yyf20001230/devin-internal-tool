@@ -151,11 +151,7 @@ def build_app(tools_dir: Path = TOOLS_DIR, db_path: Path | str = DB_PATH,
     @app.get("/api/tools/{tool_id}/records/{rid}/review")
     def record_review(rid: int, spec: ToolSpec = Depends(tool), user: User = Depends(current_user)):
         res = engine.record_review(spec, user, rid)
-        for c in res["checks"]:
-            clause = knowledge.clause(c["clause"])
-            c["clause_title"] = clause.title if clause else ""
-            c["clause_text"] = clause.text if clause else ""
-            c["policy"] = clause.doc if clause else None
+        cite(res["checks"])
         res["policy"] = spec.auto_review.policy if spec.auto_review else None
         return res
 
@@ -164,7 +160,20 @@ def build_app(tools_dir: Path = TOOLS_DIR, db_path: Path | str = DB_PATH,
                     view: str | None = None):
         if spec.auto_review is None:
             raise HTTPException(400, f"{spec.name} has no auto-review policy")
-        return engine.auto_review(spec, user, service_user(spec.auto_review.actor), view)
+        report = engine.auto_review(spec, user, service_user(spec.auto_review.actor), view)
+        for item in report["items"]:
+            cite(item["checks"])
+        doc = knowledge.docs.get(spec.auto_review.policy)
+        report["policy_title"] = doc.title if doc else spec.auto_review.policy
+        return report
+
+    def cite(checks: list[dict]) -> None:
+        """Attach the knowledge-base clause (title, text, source doc) to each check result."""
+        for c in checks:
+            clause = knowledge.clause(c["clause"])
+            c["clause_title"] = clause.title if clause else ""
+            c["clause_text"] = clause.text if clause else ""
+            c["policy"] = clause.doc if clause else None
 
     @app.post("/api/tools/{tool_id}/ai/summary")
     def ai_summary(body: SummaryBody, spec: ToolSpec = Depends(tool), user: User = Depends(current_user)):

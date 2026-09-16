@@ -31,10 +31,19 @@ export interface User { id: string; name: string; roles: string[]; title: string
 export type Verdict = 'Cleared' | 'Needs review' | 'Flagged'
 export interface CheckResult {
   id: string; clause: string; title: string; passed: boolean; outcome: 'pass' | 'review' | 'flag'; detail: string
+  rule: Filter; evidence: Record<string, unknown>
   clause_title: string; clause_text: string; policy: string
 }
 export interface Review { verdict: Verdict; policy: string | null; checks: CheckResult[] }
-export interface AutoReviewResult { cleared: string[]; flagged: string[]; review: string[] }
+export type AutoOutcome = 'cleared' | 'escalated' | 'review'
+export interface AutoReviewItem {
+  record_id: number; title: string; outcome: AutoOutcome; verdict: Verdict; action: string | null; reason: string
+  checks: CheckResult[]
+}
+export interface AutoReviewResult {
+  policy: string; policy_title: string; actor: string; view: string | null; items: AutoReviewItem[]
+  cleared: string[]; flagged: string[]; review: string[]
+}
 export interface KnowledgeSummary { id: string; title: string; summary: string; clauses: number }
 export interface Clause { code: string; title: string; text: string; doc: string }
 export interface KnowledgeDoc { id: string; title: string; summary: string; body: string; clauses: Clause[] }
@@ -77,6 +86,7 @@ export const api = {
   tool: (id: string) => req<ToolSpec>(`/api/tools/${id}`),
   records: (id: string, view: string, q: string) => req<Rec[]>(`/api/tools/${id}/records?view=${view}&q=${encodeURIComponent(q)}`),
   create: (id: string, values: Record<string, unknown>) => req<Rec>(`/api/tools/${id}/records`, { method: 'POST', body: JSON.stringify(values) }),
+  record: (id: string, rid: number) => req<Rec>(`/api/tools/${id}/records/${rid}`),
   update: (id: string, rid: number, values: Record<string, unknown>) => req<Rec>(`/api/tools/${id}/records/${rid}`, { method: 'PATCH', body: JSON.stringify(values) }),
   action: (id: string, action: string, rid: number, comment: string | null) =>
     req<Rec>(`/api/tools/${id}/actions/${action}`, { method: 'POST', body: JSON.stringify({ record_id: rid, comment }) }),

@@ -22,7 +22,7 @@ async function as(user, tool) {
   await page.waitForSelector('tbody tr')
   await page.waitForTimeout(400)
 }
-const view = (id) => page.click(`.cmdbar .view:has-text("${id}")`)
+const view = (id) => page.click(`.grid-wrap .view:has-text("${id}")`)
 
 await signOut()
 await shot('00-sign-in')
@@ -48,9 +48,15 @@ await shot('03-kyc-natural-language-filter')
 
 await as('marcus', 'kyc')
 await page.click('.ai-btn')
-await page.waitForSelector('.banner.info')
+await page.waitForSelector('.report')
 await page.waitForTimeout(500)
 await shot('04-kyc-devin-policy-review-run')
+await page.$$eval('.rep-item.green .rep-row', els => els[0]?.click())
+await page.$$eval('.rep-item.amber .rep-row', els => els.slice(1).forEach(e => e.click()))
+await page.evaluate(() => document.querySelector('.report')?.scrollIntoView())
+await page.$$eval('.rep-item.green .chk-row', els => els[0]?.click())
+await page.waitForTimeout(300)
+await shot('04b-kyc-policy-review-evidence')
 
 await as('sofia', 'refunds')
 await page.click('th:has-text("Amount")')
