@@ -2,6 +2,7 @@ id: refunds
 name: Refunds Dashboard
 app: Payments Operations
 description: Refund approvals and analytics across card, bank transfer and wallet rails.
+icon: undo
 entity: refund
 title_field: refund_id
 assignee_field: reviewer
@@ -14,13 +15,15 @@ fields:
   - {name: rail, label: Rail, type: choice, options: [Card, Bank transfer, Wallet], default: Card, width: 110}
   - {name: reason, label: Reason, type: choice, options: [Duplicate charge, Goods not received, Customer request, Fraud reversal, Subscription cancelled, Pricing error], width: 160}
   - {name: risk, label: Risk, type: choice, options: [Low, Medium, High], default: Low, width: 80}
+  - {name: days_since_purchase, label: Days since purchase, type: number, width: 90}
+  - {name: prior_refunds_90d, label: Prior refunds (90d), type: number, default: 0, width: 90}
   - {name: customer_email, label: Customer email, type: text, visible_to: [payments_ops, finance]}
   - name: bank_account
     label: Destination account
     type: text
     visible_to: [finance]     # only finance sees full destination account
     mask: last4
-  - {name: status, label: Status, type: choice, options: [Awaiting approval, Approved, Rejected, Paid], default: Awaiting approval, width: 130}
+  - {name: status, label: Status, type: choice, options: [Awaiting approval, On hold, Approved, Rejected, Paid], default: Awaiting approval, width: 130}
   - {name: reviewer, label: Reviewer, type: text}
   - {name: requested_at, label: Requested, type: datetime}
   - {name: notes, label: Notes, type: multiline}
@@ -29,12 +32,22 @@ views:
   - id: awaiting
     name: Awaiting approval
     filter: {status: Awaiting approval}
-    columns: [refund_id, merchant, amount, currency, rail, reason, risk, reviewer, requested_at]
-    sort: requested_at asc
+    columns: [refund_id, merchant, amount, currency, rail, reason, risk, prior_refunds_90d, policy_verdict, reviewer, requested_at]
+    sort: amount desc
   - id: large
     name: Over 1,000 (finance approval)
     filter: {status: Awaiting approval, amount: {gte: 1000}}
-    columns: [refund_id, merchant, amount, currency, rail, reason, risk, bank_account, requested_at]
+    columns: [refund_id, merchant, amount, currency, rail, reason, risk, policy_verdict, bank_account, requested_at]
+    sort: amount desc
+  - id: hold
+    name: On hold
+    filter: {status: On hold}
+    columns: [refund_id, merchant, amount, currency, reason, risk, policy_verdict, reviewer, requested_at]
+    sort: requested_at asc
+  - id: approved
+    name: Approved - ready for payout
+    filter: {status: Approved}
+    columns: [refund_id, merchant, amount, currency, rail, reason, reviewer, requested_at]
     sort: amount desc
   - id: fraud
     name: Fraud reversals
@@ -50,41 +63,111 @@ views:
 actions:
   - id: approve
     label: Approve
+    icon: check
     roles: [payments_ops, finance]
     only_when: {status: Awaiting approval, amount: {lt: 1000}}
     set: {status: Approved}
   - id: approve_large
     label: Approve (finance)
+    icon: check
     roles: [finance]
     only_when: {status: Awaiting approval, amount: {gte: 1000}}
     set: {status: Approved}
     requires_comment: true
     confirm: This refund is over the ops limit and needs finance sign-off. Approve?
-  - id: reject
-    label: Reject
+  - id: hold
+    label: Put on hold
+    icon: pause
     roles: [payments_ops, finance]
     only_when: {status: Awaiting approval}
+    set: {status: On hold}
+    requires_comment: true
+  - id: resume
+    label: Resume review
+    icon: play
+    roles: [payments_ops, finance]
+    only_when: {status: On hold}
+    set: {status: Awaiting approval}
+  - id: request_info
+    label: Request info from merchant
+    icon: mail
+    roles: [payments_ops, finance]
+    only_when: {status: [Awaiting approval, On hold]}
+    webhook: https://hooks.internal/merchants/request-refund-evidence
+  - id: reject
+    label: Reject
+    icon: x
+    roles: [payments_ops, finance]
+    only_when: {status: [Awaiting approval, On hold]}
     set: {status: Rejected}
     requires_comment: true
     destructive: true
   - id: pay
     label: Send to payout
+    icon: send
     roles: [finance]
     only_when: {status: Approved}
     set: {status: Paid}
     webhook: https://hooks.internal/payouts/refund
+  - id: auto_approve
+    label: Auto-approve (policy)
+    roles: [automation]
+    system: true
+    only_when: {status: Awaiting approval}
+    set: {status: Approved, reviewer: Devin AI}
+
+# Automated policy checks. Each cites a clause in knowledge/refund_policy.md.
+checks:
+  - id: amount
+    clause: RF-4.1
+    title: Amount within straight-through limit (250)
+    when: {amount: {lt: 250}}
+    pass_text: Below the straight-through limit.
+    fail_text: Above the straight-through limit - a reviewer must approve.
+  - id: reason
+    clause: RF-2.2
+    title: Reason eligible for automatic approval
+    when: {reason: [Duplicate charge, Pricing error, Subscription cancelled]}
+    pass_text: Reason is on the automatic-approval list.
+    fail_text: Reason requires evidence to be checked by a reviewer.
+  - id: window
+    clause: RF-2.3
+    title: Requested within 60 days of purchase
+    when: {days_since_purchase: {lte: 60}}
+    pass_text: Inside the refund window.
+    fail_text: Outside the 60-day window - needs a documented exception.
+  - id: risk
+    clause: RF-3.1
+    title: Not flagged as high risk
+    when: {risk: [Low, Medium]}
+    on_fail: flag
+    pass_text: No fraud indicators.
+    fail_text: High risk / fraud reversal - hold for the fraud team.
+  - id: velocity
+    clause: RF-3.2
+    title: Customer refund velocity within limit (2 per 90 days)
+    when: {prior_refunds_90d: {lte: 2}}
+    on_fail: flag
+    pass_text: Refund velocity is normal.
+    fail_text: Third or later refund in 90 days - possible refund abuse.
+
+auto_review:
+  policy: refund_policy
+  scope: {status: Awaiting approval}
+  clear_action: auto_approve
 
 dashboard:
   - {type: kpi, title: Refund value (30d), metric: sum, field: amount, format: money, filter: {requested_at: {gte: now-30d}}}
   - {type: kpi, title: Refunds requested (30d), filter: {requested_at: {gte: now-30d}}}
   - {type: kpi, title: Awaiting approval, filter: {status: Awaiting approval}}
   - {type: kpi, title: Awaiting value, metric: sum, field: amount, format: money, filter: {status: Awaiting approval}}
+  - {type: kpi, title: On hold, filter: {status: On hold}}
   - {type: series, title: Refund value by day, metric: sum, field: amount, date_field: requested_at, days: 14, chart: bar, format: money}
   - {type: group, title: Top refund reasons (30d), field: reason, chart: hbar, filter: {requested_at: {gte: now-30d}}}
   - {type: group, title: Value by rail (30d), field: rail, metric: sum, value_field: amount, chart: donut, format: money, filter: {requested_at: {gte: now-30d}}}
 
 permissions:
-  read: [payments_ops, finance, readonly, engineer]
+  read: [payments_ops, finance, readonly]
   create: [payments_ops, finance]
   update: [payments_ops, finance]
   export: [finance]

@@ -4,29 +4,42 @@ roles:
   compliance_lead: Compliance lead - approves/rejects, sees ID documents, may export
   payments_ops: Payments operations - reviews and approves refunds
   finance: Finance - approves high-value refunds, sees full bank details, may export
-  engineer: Engineer - manages feature flags in DEV/UAT, read-only on ops tools
+  engineer: Engineer - manages feature flags in DEV/UAT
   release_manager: Release manager - flips PROD flags, owns kill switch
-  readonly: Read-only auditor
+  readonly: Read-only auditor (compliance & payments)
+  automation: Policy automation service account
 
 users:
   - id: priya
     name: Priya Nair
+    title: KYC Analyst
     roles: [analyst]
   - id: marcus
     name: Marcus Chen
+    title: Head of Compliance
     roles: [compliance_lead, analyst]
   - id: sofia
     name: Sofia Alvarez
+    title: Payments Operations
     roles: [payments_ops]
   - id: dan
     name: Dan Whitfield
+    title: Finance Controller
     roles: [finance, payments_ops]
   - id: lin
     name: Lin Zhao
+    title: Backend Engineer
     roles: [engineer]
   - id: amara
     name: Amara Okafor
+    title: Release Manager
     roles: [release_manager, engineer]
   - id: auditor
     name: External Auditor
+    title: Audit (read-only)
     roles: [readonly]
+  - id: devin-ai
+    name: Devin AI
+    title: Policy automation
+    roles: [automation]
+    service: true

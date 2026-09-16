@@ -6,7 +6,9 @@ const STATUS_COLOURS: Record<string, string> = {
   Pending: 'amber', 'In review': 'blue', 'Awaiting approval': 'amber', Medium: 'amber', Gathering: 'amber',
   'Documents requested': 'amber', 'Not started': '', Draft: '', 'Not contesting': 'purple',
   Escalated: 'red', Rejected: 'red', High: 'red', Lost: 'red', 'Accepted loss': 'red', Failed: 'red', None: '',
+  Cleared: 'green', 'Needs review': 'amber', Flagged: 'red', 'On hold': 'purple', 'Info requested': 'amber',
 }
+export const pillColour = (v: string) => STATUS_COLOURS[v] ?? ''
 
 export function Cell({ f, r, isTitle }: { f: FieldSpec; r: Rec; isTitle?: boolean }) {
   const v = r[f.name]
@@ -16,6 +18,7 @@ export function Cell({ f, r, isTitle }: { f: FieldSpec; r: Rec; isTitle?: boolea
   switch (f.type) {
     case 'boolean':
       if (['dev', 'uat', 'prod'].includes(f.name)) return <span className={`tgl ${v ? 'on' : ''}`} />
+      if (/verified|complete|approved|cr_|change/.test(f.name)) return v ? <span className="pill green">Yes</span> : <span className="pill amber">No</span>
       return v ? <span className="pill red">Yes</span> : <span style={{ color: '#5c5c62' }}>No</span>
     case 'choice': return <span className={`pill ${STATUS_COLOURS[String(v)] ?? ''}`}>{String(v)}</span>
     case 'money': return <>{fmt.money(Number(v), typeof r.currency === 'string' ? r.currency : 'GBP')}</>

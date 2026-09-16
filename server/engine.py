@@ -1,13 +1,16 @@
 """Generic data engine: turns a ToolSpec into SQLite tables and governed operations."""
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
+import os
 import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .spec import Filter, ToolSpec, User
+from .spec import VERDICT_FIELD, Filter, ToolSpec, User
 
 SQL_TYPES = {
     "text": "TEXT", "multiline": "TEXT", "choice": "TEXT", "date": "TEXT", "datetime": "TEXT",
@@ -30,6 +33,16 @@ class Invalid(Exception):
 
 def now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def sign_payload(payload: dict) -> str:
+    """HMAC for outbound webhooks. The secret comes from the environment (Devin secrets store /
+    deployment secret manager) and is never read from YAML or committed files."""
+    secret = os.environ.get("WEBHOOK_SIGNING_SECRET", "")
+    if not secret:
+        return "unsigned"
+    body = json.dumps(payload, sort_keys=True, default=str).encode()
+    return "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 
 
 def _resolve_time(value: object) -> object:
@@ -116,12 +129,12 @@ class Engine:
 
     # ---- schema --------------------------------------------------------------------
     def _ensure_table(self, spec: ToolSpec) -> None:
-        cols = ", ".join(f"{f.name} {SQL_TYPES[f.type]}" for f in spec.fields)
+        cols = ", ".join(f"{f.name} {SQL_TYPES[f.type]}" for f in spec.stored_fields)
         self.conn.execute(
             f"CREATE TABLE IF NOT EXISTS {spec.entity} (id INTEGER PRIMARY KEY, created_at TEXT, updated_at TEXT, {cols})"
         )
         existing = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({spec.entity})")}
-        for f in spec.fields:  # additive migrations: new YAML field -> new column
+        for f in spec.stored_fields:  # additive migrations: new YAML field -> new column
             if f.name not in existing:
                 self.conn.execute(f"ALTER TABLE {spec.entity} ADD COLUMN {f.name} {SQL_TYPES[f.type]}")
 
@@ -139,6 +152,8 @@ class Engine:
 
     def _mask(self, spec: ToolSpec, user: User, row: dict) -> dict:
         out = dict(row)
+        if spec.checks and "id" in row:
+            out[VERDICT_FIELD] = self.review(spec, row)["verdict"]
         for f in spec.fields:
             if f.visible_to is not None and not self._has_role(user, f.visible_to):
                 v = out.get(f.name)
@@ -149,7 +164,7 @@ class Engine:
 
     def _coerce(self, spec: ToolSpec, values: dict, user: User, partial: bool) -> dict:
         clean = {}
-        for f in spec.fields:
+        for f in spec.stored_fields:
             if f.name not in values:
                 if not partial and f.default is not None:
                     clean[f.name] = f.default
@@ -198,19 +213,23 @@ class Engine:
         if extra:
             where.append(compile_filter(extra, params))
         if q:
-            text_cols = [f.name for f in spec.fields if f.type in ("text", "multiline", "choice")
+            text_cols = [f.name for f in spec.stored_fields if f.type in ("text", "multiline", "choice")
                          and (f.visible_to is None or self._has_role(user, f.visible_to))]
             where.append("(" + " OR ".join(f"{c} LIKE ?" for c in text_cols) + ")")
             params.extend([f"%{q}%"] * len(text_cols))
         sql = f"SELECT * FROM {spec.entity} WHERE {' AND '.join(where) or '1=1'} ORDER BY {order} LIMIT 500"
         return [self._mask(spec, user, dict(r)) for r in self.conn.execute(sql, params)]
 
-    def get_record(self, spec: ToolSpec, user: User, rid: int, raw: bool = False) -> dict:
-        self.require(spec, user, "read")
+    def _raw(self, spec: ToolSpec, rid: int) -> dict:
         row = self.conn.execute(f"SELECT * FROM {spec.entity} WHERE id=?", (rid,)).fetchone()
         if row is None:
             raise NotFound(f"record {rid}")
-        return dict(row) if raw else self._mask(spec, user, dict(row))
+        return dict(row)
+
+    def get_record(self, spec: ToolSpec, user: User, rid: int, raw: bool = False) -> dict:
+        self.require(spec, user, "read")
+        row = self._raw(spec, rid)
+        return row if raw else self._mask(spec, user, row)
 
     def create_record(self, spec: ToolSpec, user: User, values: dict) -> dict:
         self.require(spec, user, "create")
@@ -249,7 +268,7 @@ class Engine:
             raise Forbidden(f"{user.name} may not run '{action.label}'")
         if action.requires_comment and not (comment or "").strip():
             raise Invalid(f"'{action.label}' requires a comment")
-        record = self.get_record(spec, user, rid, raw=True)
+        record = self._raw(spec, rid)  # action roles are the permission check; automation has no read role
         if not matches(action.only_when, record):
             raise Invalid(f"'{action.label}' is not available for this record")
         # actions may set protected fields on the user's behalf (like a plugin running as system)
@@ -263,17 +282,18 @@ class Engine:
         if action.webhook:
             payload = {"tool": spec.id, "record_id": rid, "action": action.id, "by": user.id,
                        "title": record[spec.title_field]}
+            payload["signature"] = sign_payload(payload)
             self.conn.execute(
                 "INSERT INTO integration_log (ts, tool, record_id, webhook, payload) VALUES (?,?,?,?,?)",
                 (now().isoformat(timespec="seconds"), spec.id, rid, action.webhook, json.dumps(payload)),
             )
         self.conn.commit()
-        return self.get_record(spec, user, rid)
+        return self._mask(spec, user, self._raw(spec, rid))
 
     def export_csv(self, spec: ToolSpec, user: User, view_id: str | None) -> str:
         self.require(spec, user, "export")  # the prvExportToExcel equivalent
         rows = self.list_records(spec, user, view_id)
-        cols = [f.name for f in spec.fields]
+        cols = [f.name for f in spec.stored_fields]
         lines = [",".join(cols)]
         for r in rows:
             lines.append(",".join('"' + str(r.get(c) if r.get(c) is not None else "").replace('"', '""') + '"' for c in cols))
@@ -314,6 +334,57 @@ class Engine:
             "SELECT * FROM integration_log WHERE tool=? ORDER BY id DESC LIMIT ?", (spec.id, limit)
         ).fetchall()
         return [{**dict(r), "payload": json.loads(r["payload"])} for r in rows]
+
+    # ---- policy checks -----------------------------------------------------------------
+    def review(self, spec: ToolSpec, record: dict) -> dict:
+        """Evaluate every policy check against a raw record. Pure; no permissions, no writes."""
+        results = []
+        verdict = "Cleared"
+        for c in spec.checks:
+            ok = matches(c.when, record)
+            results.append({"id": c.id, "clause": c.clause, "title": c.title, "passed": ok,
+                            "outcome": "pass" if ok else c.on_fail,
+                            "detail": c.pass_text if ok else c.fail_text})
+            if not ok:
+                verdict = "Flagged" if c.on_fail == "flag" or verdict == "Flagged" else "Needs review"
+        return {"verdict": verdict, "checks": results}
+
+    def record_review(self, spec: ToolSpec, user: User, rid: int) -> dict:
+        return self.review(spec, self.get_record(spec, user, rid, raw=True))
+
+    def auto_review(self, spec: ToolSpec, user: User, actor: User, view_id: str | None = None) -> dict:
+        """Apply the policy: cleared records get clear_action, flagged get flag_action, the rest wait for a human."""
+        self.require(spec, user, "update")
+        ar = spec.auto_review
+        if ar is None:
+            raise Invalid(f"{spec.name} has no auto-review policy")
+        rows = self.list_records(spec, user, view_id, extra=ar.scope)
+        summary: dict[str, list[str]] = {"cleared": [], "flagged": [], "review": []}
+        for r in rows:
+            raw = self._raw(spec, r["id"])
+            res = self.review(spec, raw)
+            title = str(raw[spec.title_field])
+            failed = [c for c in res["checks"] if not c["passed"]]
+            if res["verdict"] == "Cleared" and ar.clear_action:
+                passed = ", ".join(c["clause"] for c in res["checks"])
+                self._try_action(spec, actor, ar.clear_action, raw["id"],
+                                 f"Auto-cleared by policy checks ({passed}); triggered by {user.name}")
+                summary["cleared"].append(title)
+            elif res["verdict"] == "Flagged" and ar.flag_action:
+                reasons = "; ".join(f"{c['clause']} {c['title']}" for c in failed if c["outcome"] == "flag")
+                self._try_action(spec, actor, ar.flag_action, raw["id"], f"Flagged by policy checks: {reasons}")
+                summary["flagged"].append(title)
+            elif res["verdict"] == "Flagged":
+                summary["flagged"].append(title)
+            else:
+                summary["review"].append(title)
+        return summary
+
+    def _try_action(self, spec: ToolSpec, actor: User, action_id: str, rid: int, comment: str) -> None:
+        try:
+            self.run_action(spec, actor, action_id, rid, comment)
+        except Invalid:
+            pass  # record no longer in the action's state; leave it
 
     # ---- dashboard -------------------------------------------------------------------
     def dashboard(self, spec: ToolSpec, user: User) -> list[dict]:

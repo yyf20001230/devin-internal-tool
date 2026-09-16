@@ -1,5 +1,6 @@
 import type { TileSpec } from './api'
 import { fmt } from './api'
+import { Icon } from './Icon'
 
 const PALETTE = ['#5b9cf6', '#b083f0', '#39c5bb', '#3fb950', '#d9a021', '#f0524f', '#8b8b90']
 
@@ -13,7 +14,7 @@ function Kpi({ t }: { t: TileSpec }) {
   const alert = /without|breach|stale|sanction/i.test(t.title) && (t.value ?? 0) > 0
   return (
     <div className={`tile ${alert ? 'alert' : ''}`}>
-      <div className="h"><span>{t.title}</span><span className="icons">↻ ⤢</span></div>
+      <div className="h"><span>{t.title}</span><span className="icons"><Icon name="expand" size={13} /></span></div>
       <div className="v">{value(t, t.value ?? 0)}</div>
       <div className="sub">{t.metric === 'count' ? 'records' : `${t.metric} of ${t.field}`}</div>
     </div>
@@ -80,7 +81,7 @@ export function Dashboard({ tiles }: { tiles: TileSpec[] }) {
     <div className="tiles">
       {tiles.map((t, i) => t.type === 'kpi' ? <Kpi key={i} t={t} /> : (
         <div className="tile wide" key={i}>
-          <div className="h"><span>{t.title}</span><span className="icons">↻ ⤢</span></div>
+          <div className="h"><span>{t.title}</span><span className="icons"><Icon name="expand" size={13} /></span></div>
           {t.chart === 'donut' ? <Donut t={t} /> : t.chart === 'hbar' ? <HBars t={t} /> : <Bars t={t} />}
         </div>
       ))}

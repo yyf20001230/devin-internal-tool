@@ -1,0 +1,44 @@
+# Devin Cloud declarative environment for this repo.
+# Builds the snapshot every session starts from: deps installed, DB seeded, UI built,
+# so a `/new-tool` session can go straight to writing YAML instead of setting up.
+#
+# Secrets are NOT in this file. OPENAI_API_KEY and WEBHOOK_SIGNING_SECRET are stored in the
+# Devin Secrets store and injected as environment variables at session start (see .env.example).
+
+name: devin-internal-tools
+runtime:
+  python: "3.10"
+  node: "20"
+
+# Runs once when the snapshot is built.
+install:
+  - pip install -r requirements.txt
+  - npm --prefix web ci
+  - npm ci                         # playwright, for scripts/screenshots.mjs
+  - npx playwright install chromium
+
+# Runs at the start of every session (fast, idempotent).
+initialize:
+  - python -m server.seed          # fresh data.db with demo data; never real merchant data
+  - npm --prefix web run build     # static UI served by FastAPI
+
+# How to verify the environment works.
+verify:
+  lint: npm --prefix web run lint
+  test: python -m pytest -q
+  screenshots: APP_URL=http://localhost:8000 node scripts/screenshots.mjs
+
+# Long-running processes Devin can start; the preview is served on a single port.
+services:
+  app:
+    command: uvicorn server.main:app --host 0.0.0.0 --port 8000
+    port: 8000
+    healthcheck: GET /api/ai
+
+secrets:
+  required: []
+  optional:
+    - name: OPENAI_API_KEY
+      purpose: live LLM summaries and natural-language queries; falls back to rules when absent
+    - name: WEBHOOK_SIGNING_SECRET
+      purpose: HMAC signature on outbound webhook payloads; payloads are marked unsigned when absent

@@ -2,6 +2,7 @@ id: flags
 name: Feature Flags
 app: Release Control
 description: Admin panel over the flag store. Services read flags from the serving store; this is the governed write path.
+icon: flag
 entity: feature_flag
 title_field: key
 assignee_field: owner
@@ -82,7 +83,7 @@ dashboard:
   - {type: group, title: Change request status, field: cr_status, chart: donut}
 
 permissions:
-  read: [engineer, release_manager, readonly]
+  read: [engineer, release_manager]
   create: [engineer, release_manager]
   update: [engineer, release_manager]
   export: [release_manager]

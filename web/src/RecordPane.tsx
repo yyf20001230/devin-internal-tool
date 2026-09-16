@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react'
-import type { AuditEntry, FieldSpec, Rec, ToolSpec } from './api'
+import type { ActionSpec, AuditEntry, FieldSpec, Rec, Review, Summary, ToolSpec } from './api'
 import { api, fmt } from './api'
+import { pillColour } from './Cell'
+import { Icon, actionIcon } from './Icon'
 
 interface Props {
   tool: ToolSpec
   record: Rec | null   // null = new record
+  actions: ActionSpec[]
+  actionEnabled: (a: ActionSpec, r: Rec) => boolean
+  onAction: (a: ActionSpec, r: Rec) => void
   onClose: () => void
   onSaved: (r: Rec) => void
   toast: (msg: string, err?: boolean) => void
@@ -33,54 +38,170 @@ function Input({ f, v, onChange, disabled }: { f: FieldSpec; v: unknown; onChang
   }
 }
 
-export function RecordPane({ tool, record, onClose, onSaved, toast }: Props) {
+const OUTCOME_ICON = { pass: 'check', review: 'alert', flag: 'x' } as const
+const OUTCOME_CLASS = { pass: 'green', review: 'amber', flag: 'red' } as const
+
+export function RecordPane({ tool, record, actions, actionEnabled, onAction, onClose, onSaved, toast }: Props) {
   const [values, setValues] = useState<Record<string, unknown>>({})
   const [audit, setAudit] = useState<AuditEntry[]>([])
+  const [review, setReview] = useState<Review | null>(null)
+  const [summary, setSummary] = useState<Summary | null>(null)
+  const [openClause, setOpenClause] = useState<string | null>(null)
+  const [showForm, setShowForm] = useState(false)
   const [err, setErr] = useState('')
   const [saving, setSaving] = useState(false)
   const isNew = record === null
+  const hasPolicy = tool.checks.length > 0
 
   useEffect(() => {
-    setErr('')
+    setErr(''); setReview(null); setSummary(null); setOpenClause(null)
     if (record) {
-      setValues({ ...record })
+      setValues({ ...record }); setShowForm(false)
       api.audit(tool.id, record.id).then(setAudit).catch(() => setAudit([]))
+      if (hasPolicy) {
+        api.review(tool.id, record.id).then(setReview).catch(() => setReview(null))
+        api.summary(tool.id, record.id).then(setSummary).catch(() => setSummary(null))
+      }
     } else {
       const d: Record<string, unknown> = {}
       tool.fields.forEach(f => { if (f.default != null) d[f.name] = f.default })
-      setValues(d); setAudit([])
+      setValues(d); setAudit([]); setShowForm(true)
     }
-  }, [tool, record])
+  }, [tool, record, hasPolicy])
 
-  const dirty = record ? tool.fields.some(f => !f.masked && (values[f.name] ?? '') !== (record[f.name] ?? '')) : true
+  const dirty = record ? tool.fields.some(f => !f.masked && !f.computed && (values[f.name] ?? '') !== (record[f.name] ?? '')) : true
   const editable = isNew ? tool.can.create : tool.can.update
 
   async function save() {
     setSaving(true); setErr('')
     try {
       const payload: Record<string, unknown> = {}
-      tool.fields.forEach(f => { if (!f.masked && f.name in values) payload[f.name] = values[f.name] })
+      tool.fields.forEach(f => { if (!f.masked && !f.computed && f.name in values) payload[f.name] = values[f.name] })
       const r = record ? await api.update(tool.id, record.id, payload) : await api.create(tool.id, payload)
       toast(record ? 'Saved' : 'Created'); onSaved(r)
     } catch (e) { setErr((e as Error).message) } finally { setSaving(false) }
   }
 
   const title = record ? String(record[tool.title_field]) : `New ${tool.entity.replace('_', ' ')}`
+  const status = record && typeof record.status === 'string' ? record.status : null
+  const usable = record ? actions.filter(a => a.allowed && actionEnabled(a, record)) : []
+  const blocked = record ? actions.filter(a => a.allowed && !actionEnabled(a, record)) : []
+  const keyFields = tool.fields.filter(f => !f.computed && f.name !== tool.title_field && f.name !== 'status' && !['created_at', 'updated_at'].includes(f.name))
+
   return (
     <aside className="pane">
-      <h3>{title}<button onClick={onClose} title="Close">✕</button></h3>
-      <div className="sub">{record ? `Last updated ${fmt.dt(String(record.updated_at))}` : 'Fill in the required fields'}</div>
-      <div className="form">
-        {tool.fields.map(f => (
-          <div className="f" key={f.name}>
-            <label>{f.label}{f.required ? ' *' : ''}{f.visible_to && <span title={`Visible to: ${f.visible_to.join(', ')}`}> 🔒</span>}</label>
-            <Input f={f} v={values[f.name]} disabled={!editable || f.readonly} onChange={v => setValues(s => ({ ...s, [f.name]: v }))} />
+      <div className="pane-head">
+        <div>
+          <h3>{title}</h3>
+          <div className="sub">
+            {status && <span className={`pill ${pillColour(status)}`}>{status}</span>}
+            {record && <span> Updated {fmt.dt(String(record.updated_at))}</span>}
+            {!record && 'Fill in the required fields'}
           </div>
-        ))}
-        {err && <div className="err">{err}</div>}
-        {editable && <button className="btn" disabled={!dirty || saving} onClick={save}>{isNew ? 'Create' : 'Save'}</button>}
-        {!editable && <div className="sub">Read-only for your role.</div>}
+        </div>
+        <button className="iconbtn" onClick={onClose} title="Close"><Icon name="x" /></button>
       </div>
+
+      {record && actions.length > 0 && (
+        <div className="pane-actions">
+          {usable.map(a => (
+            <button key={a.id} className={`btn ${a.destructive ? 'danger' : 'secondary'}`} onClick={() => onAction(a, record)}>
+              <Icon name={actionIcon(a.id, a.icon, a.destructive)} />{a.label}
+            </button>
+          ))}
+          {usable.length === 0 && <div className="sub">No actions available in the current state{blocked.length ? ` (${blocked.map(b => b.label).join(', ')} need a different status)` : ''}.</div>}
+        </div>
+      )}
+
+      {record && hasPolicy && (
+        <section className="ai">
+          <div className="ai-head">
+            <Icon name="sparkle" />
+            <span>Case summary</span>
+            {summary && <span className="src" title={summary.source === 'openai' ? 'Generated by the configured LLM' : 'Deterministic summary from policy checks (LLM unavailable)'}>{summary.source === 'openai' ? 'LLM' : 'rules'}</span>}
+          </div>
+          {!summary && <div className="sub">Summarising…</div>}
+          {summary && (
+            <>
+              <div className="ai-headline">{summary.headline}</div>
+              <ul>{summary.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>
+              <div className="ai-rec"><Icon name="arrowUpRight" />{summary.recommendation}</div>
+            </>
+          )}
+        </section>
+      )}
+
+      {record && hasPolicy && (
+        <section className="policy">
+          <div className="ai-head">
+            <Icon name="book" />
+            <span>Policy checks</span>
+            {review && <span className={`pill ${pillColour(review.verdict)}`}>{review.verdict}</span>}
+          </div>
+          {!review && <div className="sub">Running checks…</div>}
+          {review?.checks.map(c => (
+            <div key={c.id} className={`chk ${OUTCOME_CLASS[c.outcome]}`}>
+              <div className="chk-row" onClick={() => setOpenClause(openClause === c.id ? null : c.id)}>
+                <Icon name={OUTCOME_ICON[c.outcome]} className={OUTCOME_CLASS[c.outcome]} />
+                <span className="chk-title">{c.title}</span>
+                <span className="clause">{c.clause}</span>
+              </div>
+              <div className="chk-detail">{c.detail}</div>
+              {openClause === c.id && (
+                <div className="clause-text"><b>{c.clause} {c.clause_title}</b><br />{c.clause_text}</div>
+              )}
+            </div>
+          ))}
+          {review && (
+            <div className="sub" style={{ marginTop: 6 }}>
+              {review.verdict === 'Cleared' && 'All checks passed — eligible for automatic clearance.'}
+              {review.verdict === 'Flagged' && 'A mandatory control failed — automation escalates, a lead decides.'}
+              {review.verdict === 'Needs review' && 'Automation settled everything it could; the remaining checks need a human.'}
+              {' Click a check to read the clause.'}
+            </div>
+          )}
+        </section>
+      )}
+
+      {record && !showForm && (
+        <section className="details">
+          <div className="ai-head"><Icon name="grid" /><span>Details</span>
+            <span className="spacer" />
+            {editable && <button className="linkbtn" onClick={() => setShowForm(true)}>Edit</button>}
+          </div>
+          <dl>
+            {keyFields.map(f => (
+              <div key={f.name} className="kv">
+                <dt>{f.label}{f.visible_to && <Icon name="lock" size={11} className="dim" />}</dt>
+                <dd className={f.masked ? 'masked' : ''}>{record[f.name] == null || record[f.name] === '' ? '—' : String(
+                  f.type === 'boolean' ? (record[f.name] ? 'Yes' : 'No')
+                    : f.type === 'money' ? fmt.money(Number(record[f.name]), typeof record.currency === 'string' ? record.currency : 'GBP')
+                    : f.type === 'datetime' ? fmt.dt(String(record[f.name]))
+                    : f.type === 'date' ? fmt.date(String(record[f.name]))
+                    : record[f.name])}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
+
+      {showForm && (
+        <div className="form">
+          {tool.fields.filter(f => !f.computed).map(f => (
+            <div className="f" key={f.name}>
+              <label>{f.label}{f.required ? ' *' : ''}{f.visible_to && <span title={`Visible to: ${f.visible_to.join(', ')}`}> <Icon name="lock" size={11} className="dim" /></span>}</label>
+              <Input f={f} v={values[f.name]} disabled={!editable || f.readonly} onChange={v => setValues(s => ({ ...s, [f.name]: v }))} />
+            </div>
+          ))}
+          {err && <div className="err">{err}</div>}
+          <div className="acts">
+            {record && <button className="btn secondary" onClick={() => { setShowForm(false); setValues({ ...record }) }}>Cancel</button>}
+            {editable && <button className="btn" disabled={!dirty || saving} onClick={save}>{isNew ? 'Create' : 'Save changes'}</button>}
+          </div>
+          {!editable && <div className="sub">Read-only for your role.</div>}
+        </div>
+      )}
+
       {record && (
         <div className="audit">
           <h4>Audit trail</h4>

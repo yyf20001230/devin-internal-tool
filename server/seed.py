@@ -31,11 +31,13 @@ def seed(db_path: Path | str = DB_PATH, tools_dir: Path = TOOLS_DIR) -> None:
                   "Meridian Payments Inc", "Blue Harbour Foods", "Zenith Logistics", "Sahara Textiles",
                   "Kite Software Ltd", "Petrov & Sons", "Maple Retail Group", "Coral Bay Resorts",
                   "Quantum Ventures", "Delta Farms Cooperative", "Ivory Coast Exports", "Harbour Capital",
-                  "Oslo Marine AS", "Tandem Mobility", "Silverline Media", "Crescent Pharma"]
+                  "Oslo Marine AS", "Tandem Mobility", "Silverline Media", "Crescent Pharma",
+                  "Birch Lane Bakery", "Atlas Courier Ltd", "Fjord Analytics", "Sunrise Dental Group",
+                  "Lumen Studios", "Granite Build Co", "Willow Home Care", "Pioneer Robotics"]
     for i, name in enumerate(applicants):
         score = random.randint(8, 96)
         risk = "High" if score >= 70 else "Medium" if score >= 40 else "Low"
-        decided = i >= 15
+        decided = i >= 22
         status = random.choice(["Approved", "Rejected"]) if decided else random.choice(["Pending", "In review", "In review", "Escalated"])
         if status == "Escalated":
             risk = "High"
@@ -43,7 +45,8 @@ def seed(db_path: Path | str = DB_PATH, tools_dir: Path = TOOLS_DIR) -> None:
         eng.create_record(kyc, SYSTEM, {
             "case_id": f"KYC-{10470 + i}", "applicant": name, "country": random.choice(countries),
             "risk": risk, "risk_score": score, "sanctions_hit": score > 80 or random.random() < 0.1,
-            "docs_complete": random.choice([40, 60, 80, 100, 100]),
+            "docs_complete": random.choice([40, 60, 80, 100, 100, 100]),
+            "address_verified": random.random() < 0.8,
             "id_document_number": f"P{random.randint(10000000, 99999999)}",
             "date_of_birth": f"19{random.randint(60, 99)}-{random.randint(1, 12):02d}-{random.randint(1, 28):02d}",
             "status": status, "assignee": random.choice(analysts),
@@ -70,6 +73,8 @@ def seed(db_path: Path | str = DB_PATH, tools_dir: Path = TOOLS_DIR) -> None:
             "currency": random.choices(["GBP", "EUR", "USD"], weights=[6, 3, 1])[0],
             "rail": random.choices(["Card", "Bank transfer", "Wallet"], weights=[6, 3, 1])[0],
             "reason": reason, "risk": risk,
+            "days_since_purchase": random.choices([random.randint(1, 30), random.randint(31, 60), random.randint(61, 120)], weights=[6, 3, 1])[0],
+            "prior_refunds_90d": random.choices([0, 1, 2, 3, 4], weights=[55, 25, 10, 7, 3])[0],
             "customer_email": f"customer{random.randint(100, 999)}@example.com",
             "bank_account": f"GB{random.randint(10, 99)}BARC{random.randint(10000000000000, 99999999999999)}",
             "status": status, "reviewer": random.choice(["Sofia Alvarez", "Dan Whitfield", ""]) if status != "Awaiting approval" else random.choice(["Sofia Alvarez", ""]),

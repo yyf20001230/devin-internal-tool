@@ -10,11 +10,14 @@ from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from .ai import OPENAI_MODEL, AIService, Provider, make_provider
 from .engine import Engine, Forbidden, Invalid, NotFound
+from .knowledge import load_knowledge
 from .spec import ToolSpec, User, load_directory, load_tools
 
 ROOT = Path(__file__).resolve().parent.parent
 TOOLS_DIR = Path(os.environ.get("TOOLS_DIR", ROOT / "tools"))
+KNOWLEDGE_DIR = Path(os.environ.get("KNOWLEDGE_DIR", ROOT / "knowledge"))
 DB_PATH = Path(os.environ.get("DB_PATH", ROOT / "data.db"))
 
 
@@ -23,10 +26,26 @@ class ActionBody(BaseModel):
     comment: str | None = None
 
 
-def build_app(tools_dir: Path = TOOLS_DIR, db_path: Path | str = DB_PATH) -> FastAPI:
+class SummaryBody(BaseModel):
+    record_id: int
+
+
+class QueryBody(BaseModel):
+    question: str
+    view: str | None = None
+
+
+def build_app(tools_dir: Path = TOOLS_DIR, db_path: Path | str = DB_PATH,
+              knowledge_dir: Path = KNOWLEDGE_DIR, provider: Provider | None = None) -> FastAPI:
     tools = load_tools(tools_dir)
     directory = load_directory(tools_dir)
+    knowledge = load_knowledge(knowledge_dir)
     engine = Engine(db_path, tools)
+    ai = AIService(engine, provider or make_provider(), knowledge.clause)
+    for spec in tools.values():  # every check must cite a clause that exists in the knowledge base
+        for c in spec.checks:
+            if knowledge.clause(c.clause) is None:
+                raise ValueError(f"{spec.id}: check '{c.id}' cites unknown clause {c.clause}")
 
     app = FastAPI(title="Internal Tools Platform")
     app.state.engine = engine
@@ -48,9 +67,15 @@ def build_app(tools_dir: Path = TOOLS_DIR, db_path: Path | str = DB_PATH) -> Fas
     # Auth is a stub: the front-end sends X-User. In production this is an OIDC/Entra ID
     # token validated by the reverse proxy, and roles come from group claims.
     def current_user(x_user: str = Header(default="")) -> User:
-        user = next((u for u in directory.users if u.id == x_user), None)
+        user = next((u for u in directory.users if u.id == x_user and not u.service), None)
         if user is None:
             raise HTTPException(401, "unknown user")
+        return user
+
+    def service_user(user_id: str) -> User:
+        user = next((u for u in directory.users if u.id == user_id and u.service), None)
+        if user is None:
+            raise HTTPException(500, f"service account {user_id} is not defined")
         return user
 
     def tool(tool_id: str, user: User = Depends(current_user)) -> ToolSpec:
@@ -63,7 +88,7 @@ def build_app(tools_dir: Path = TOOLS_DIR, db_path: Path | str = DB_PATH) -> Fas
     @app.get("/api/me")
     def me(user: User = Depends(current_user)):
         return {"user": user, "roles": directory.roles, "tools": [
-            {"id": t.id, "name": t.name, "app": t.app, "description": t.description,
+            {"id": t.id, "name": t.name, "app": t.app, "description": t.description, "icon": t.icon,
              "can": {op: bool(set(user.roles) & set(getattr(t.permissions, op)))
                      for op in ("read", "create", "update", "export")}}
             for t in engine.visible_tools(user)
@@ -71,7 +96,19 @@ def build_app(tools_dir: Path = TOOLS_DIR, db_path: Path | str = DB_PATH) -> Fas
 
     @app.get("/api/users")
     def users():
-        return directory.users  # the role switcher for the demo
+        return [u for u in directory.users if not u.service]  # demo sign-in page; stands in for Entra ID
+
+    @app.get("/api/knowledge")
+    def knowledge_index(user: User = Depends(current_user)):
+        return [{"id": d.id, "title": d.title, "summary": d.summary, "clauses": len(d.clauses)}
+                for d in knowledge.docs.values()]
+
+    @app.get("/api/knowledge/{doc_id}")
+    def knowledge_doc(doc_id: str, user: User = Depends(current_user)):
+        doc = knowledge.docs.get(doc_id)
+        if doc is None:
+            raise HTTPException(404, f"policy {doc_id}")
+        return doc
 
     @app.get("/api/tools/{tool_id}")
     def get_tool(spec: ToolSpec = Depends(tool), user: User = Depends(current_user)):
@@ -79,6 +116,7 @@ def build_app(tools_dir: Path = TOOLS_DIR, db_path: Path | str = DB_PATH) -> Fas
         d = spec.model_dump()
         for f in d["fields"]:
             f["masked"] = f["visible_to"] is not None and not can(f["visible_to"])
+        d["actions"] = [a for a in d["actions"] if not a["system"]]
         for a in d["actions"]:
             a["allowed"] = can(a["roles"])
         d["can"] = {op: can(getattr(spec.permissions, op)) for op in ("read", "create", "update", "export")}
@@ -109,6 +147,39 @@ def build_app(tools_dir: Path = TOOLS_DIR, db_path: Path | str = DB_PATH) -> Fas
     def action(action_id: str, body: ActionBody, spec: ToolSpec = Depends(tool),
                user: User = Depends(current_user)):
         return engine.run_action(spec, user, action_id, body.record_id, body.comment)
+
+    @app.get("/api/tools/{tool_id}/records/{rid}/review")
+    def record_review(rid: int, spec: ToolSpec = Depends(tool), user: User = Depends(current_user)):
+        res = engine.record_review(spec, user, rid)
+        for c in res["checks"]:
+            clause = knowledge.clause(c["clause"])
+            c["clause_title"] = clause.title if clause else ""
+            c["clause_text"] = clause.text if clause else ""
+            c["policy"] = clause.doc if clause else None
+        res["policy"] = spec.auto_review.policy if spec.auto_review else None
+        return res
+
+    @app.post("/api/tools/{tool_id}/auto-review")
+    def auto_review(spec: ToolSpec = Depends(tool), user: User = Depends(current_user),
+                    view: str | None = None):
+        if spec.auto_review is None:
+            raise HTTPException(400, f"{spec.name} has no auto-review policy")
+        return engine.auto_review(spec, user, service_user(spec.auto_review.actor), view)
+
+    @app.post("/api/tools/{tool_id}/ai/summary")
+    def ai_summary(body: SummaryBody, spec: ToolSpec = Depends(tool), user: User = Depends(current_user)):
+        return ai.summarize(spec, user, body.record_id)
+
+    @app.post("/api/tools/{tool_id}/ai/query")
+    def ai_query(body: QueryBody, spec: ToolSpec = Depends(tool), user: User = Depends(current_user)):
+        if not body.question.strip():
+            raise HTTPException(400, "ask something")
+        return ai.query(spec, user, body.question, body.view)
+
+    @app.get("/api/ai")
+    def ai_status(user: User = Depends(current_user)):
+        return {"provider": ai.provider.name, "model": OPENAI_MODEL if ai.provider.name == "openai" else None,
+                "last_error": ai.provider.last_error}
 
     @app.get("/api/tools/{tool_id}/dashboard")
     def dashboard(spec: ToolSpec = Depends(tool), user: User = Depends(current_user)):

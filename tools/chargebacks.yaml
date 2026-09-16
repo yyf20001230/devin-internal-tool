@@ -4,6 +4,7 @@ id: chargebacks
 name: Chargeback Watchlist
 app: Payments Operations
 description: Open disputes with response deadlines and evidence status. Only finance can accept a loss.
+icon: scale
 entity: chargeback
 title_field: dispute_id
 assignee_field: handler

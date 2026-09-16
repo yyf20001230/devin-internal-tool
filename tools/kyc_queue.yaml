@@ -2,6 +2,7 @@ id: kyc
 name: KYC Review Queue
 app: Compliance Operations
 description: Work queue for onboarding cases with risk scoring, SLA tracking and four-eyes approval.
+icon: shield
 entity: kyc_case
 title_field: case_id
 assignee_field: assignee
@@ -14,6 +15,7 @@ fields:
   - {name: risk_score, label: Score, type: number, width: 70}
   - {name: sanctions_hit, label: Sanctions / PEP, type: boolean, default: false, width: 110}
   - {name: docs_complete, label: Docs, type: percent, width: 80}
+  - {name: address_verified, label: Address verified, type: boolean, default: false, width: 110}
   - name: id_document_number
     label: ID document no.
     type: text
@@ -23,7 +25,7 @@ fields:
     label: Date of birth
     type: date
     visible_to: [compliance_lead]
-  - {name: status, label: Status, type: choice, options: [Pending, In review, Escalated, Approved, Rejected], default: Pending, width: 100}
+  - {name: status, label: Status, type: choice, options: [Pending, In review, Documents requested, Escalated, Approved, Rejected], default: Pending, width: 130}
   - {name: assignee, label: Assigned to, type: text}
   - {name: sla_due, label: SLA due, type: datetime}
   - {name: opened_at, label: Opened, type: datetime}
@@ -32,44 +34,47 @@ fields:
 views:
   - id: open
     name: Open cases
-    filter: {status: [Pending, In review, Escalated]}
-    columns: [case_id, applicant, country, risk, risk_score, sanctions_hit, docs_complete, status, assignee, sla_due]
-    sort: sla_due asc
+    filter: {status: [Pending, In review, Documents requested, Escalated]}
+    columns: [case_id, applicant, country, risk, risk_score, sanctions_hit, docs_complete, policy_verdict, status, assignee, sla_due]
+    sort: risk_score desc
   - id: mine
     name: Assigned to me
     mine: true
-    filter: {status: [Pending, In review, Escalated]}
-    columns: [case_id, applicant, risk, risk_score, sanctions_hit, docs_complete, status, sla_due]
-    sort: sla_due asc
+    filter: {status: [Pending, In review, Documents requested, Escalated]}
+    columns: [case_id, applicant, risk, risk_score, sanctions_hit, docs_complete, policy_verdict, status, sla_due]
+    sort: risk_score desc
   - id: breach
     name: Breaching SLA in 4h
-    filter: {status: [Pending, In review, Escalated], sla_due: {lt: now+4h}}
-    columns: [case_id, applicant, risk, sanctions_hit, status, assignee, sla_due]
+    filter: {status: [Pending, In review, Documents requested, Escalated], sla_due: {lt: now+4h}}
+    columns: [case_id, applicant, risk, risk_score, sanctions_hit, policy_verdict, status, assignee, sla_due]
     sort: sla_due asc
   - id: high
     name: High risk & sanctions hits
     filter: {risk: High}
-    columns: [case_id, applicant, country, risk_score, sanctions_hit, status, assignee, sla_due]
+    columns: [case_id, applicant, country, risk_score, sanctions_hit, policy_verdict, status, assignee, sla_due]
     sort: risk_score desc
   - id: closed
     name: Decided
     filter: {status: [Approved, Rejected]}
-    columns: [case_id, applicant, country, risk, status, assignee, opened_at]
+    columns: [case_id, applicant, country, risk, risk_score, status, assignee, opened_at]
 
 actions:
   - id: start_review
     label: Start review
+    icon: play
     roles: [analyst, compliance_lead]
-    only_when: {status: Pending}
+    only_when: {status: [Pending, Documents requested]}
     set: {status: In review}
   - id: approve
     label: Approve
+    icon: check
     roles: [compliance_lead]
     only_when: {status: [In review, Escalated]}
     set: {status: Approved}
     confirm: Approve this applicant? This opens their account.
   - id: reject
     label: Reject
+    icon: x
     roles: [compliance_lead]
     only_when: {status: [In review, Escalated]}
     set: {status: Rejected}
@@ -77,26 +82,81 @@ actions:
     destructive: true
   - id: escalate
     label: Escalate to EDD
+    icon: arrow-up
     roles: [analyst, compliance_lead]
-    only_when: {status: [Pending, In review]}
+    only_when: {status: [Pending, In review, Documents requested]}
     set: {status: Escalated, risk: High}
     requires_comment: true
   - id: request_docs
     label: Request documents
+    icon: file
     roles: [analyst, compliance_lead]
     only_when: {status: [Pending, In review, Escalated]}
-    webhook: https://hooks.internal/onboarding/request-documents   # Power Automate equivalent
+    set: {status: Documents requested}
+    webhook: https://hooks.internal/onboarding/request-documents
+  - id: auto_approve
+    label: Auto-approve (policy)
+    roles: [automation]
+    system: true
+    only_when: {status: [Pending, In review]}
+    set: {status: Approved}
+  - id: auto_escalate
+    label: Auto-escalate (policy)
+    roles: [automation]
+    system: true
+    only_when: {status: [Pending, In review]}
+    set: {status: Escalated, risk: High}
+
+# Automated policy checks. Each cites a clause in knowledge/kyc_review_policy.md.
+checks:
+  - id: sanctions
+    clause: KYC-2.1
+    title: No sanctions or PEP match
+    when: {sanctions_hit: false}
+    on_fail: flag
+    pass_text: Screening returned no match.
+    fail_text: Screening returned a match - enhanced due diligence is mandatory.
+  - id: docs
+    clause: KYC-3.1
+    title: Identity documents complete
+    when: {docs_complete: {gte: 100}}
+    pass_text: All required documents received.
+    fail_text: Document set incomplete - request the missing items before deciding.
+  - id: address
+    clause: KYC-3.2
+    title: Address independently verified
+    when: {address_verified: true}
+    pass_text: Address matched against an independent source.
+    fail_text: Address not yet verified against an independent source.
+  - id: risk_band
+    clause: KYC-4.1
+    title: Risk rating Low or Medium
+    when: {risk: [Low, Medium]}
+    pass_text: Standard due diligence applies.
+    fail_text: High-risk rating - a compliance lead must decide.
+  - id: score
+    clause: KYC-4.2
+    title: Risk score below straight-through threshold (40)
+    when: {risk_score: {lt: 40}}
+    pass_text: Score is within the straight-through band.
+    fail_text: Score is above the straight-through band.
+
+auto_review:
+  policy: kyc_review_policy
+  scope: {status: [Pending, In review]}
+  clear_action: auto_approve
+  flag_action: auto_escalate
 
 dashboard:
-  - {type: kpi, title: Open cases, filter: {status: [Pending, In review, Escalated]}}
-  - {type: kpi, title: Breaching SLA in 4h, filter: {status: [Pending, In review, Escalated], sla_due: {lt: now+4h}}}
-  - {type: kpi, title: Sanctions / PEP hits open, filter: {sanctions_hit: true, status: [Pending, In review, Escalated]}}
-  - {type: group, title: Open cases by risk, field: risk, chart: donut, filter: {status: [Pending, In review, Escalated]}}
-  - {type: group, title: Queue by analyst, field: assignee, chart: hbar, filter: {status: [Pending, In review, Escalated]}}
+  - {type: kpi, title: Open cases, filter: {status: [Pending, In review, Documents requested, Escalated]}}
+  - {type: kpi, title: Breaching SLA in 4h, filter: {status: [Pending, In review, Documents requested, Escalated], sla_due: {lt: now+4h}}}
+  - {type: kpi, title: Sanctions / PEP hits open, filter: {sanctions_hit: true, status: [Pending, In review, Documents requested, Escalated]}}
+  - {type: group, title: Open cases by risk, field: risk, chart: donut, filter: {status: [Pending, In review, Documents requested, Escalated]}}
+  - {type: group, title: Queue by analyst, field: assignee, chart: hbar, filter: {status: [Pending, In review, Documents requested, Escalated]}}
   - {type: series, title: Cases opened per day, date_field: opened_at, days: 14, chart: bar}
 
 permissions:
-  read: [analyst, compliance_lead, readonly, engineer]
+  read: [analyst, compliance_lead, readonly]
   create: [analyst, compliance_lead]
   update: [analyst, compliance_lead]
   export: [compliance_lead]

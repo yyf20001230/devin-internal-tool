@@ -1,13 +1,20 @@
-// Drives the running app over Chrome DevTools Protocol and saves screenshots to docs/screens/.
-// Usage: node scripts/screenshots.mjs  (needs the API on :8000 and vite on :5173)
+// Drives the running app and saves screenshots to docs/screens/.
+// Usage: APP_URL=http://localhost:8000 node scripts/screenshots.mjs
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
 
-const base = process.env.APP_URL || 'http://localhost:5173'
+const base = process.env.APP_URL || 'http://localhost:8000'
 mkdirSync('docs/screens', { recursive: true })
 const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 } })
+const shot = (name) => page.screenshot({ path: `docs/screens/${name}.png` })
 
+async function signOut() {
+  await page.goto(base)
+  await page.evaluate(() => localStorage.clear())
+  await page.goto(base)
+  await page.waitForSelector('.signin')
+}
 async function as(user, tool) {
   await page.goto(base)
   await page.evaluate(([u, t]) => { localStorage.setItem('user', u); localStorage.setItem('tool', t) }, [user, tool])
@@ -15,39 +22,61 @@ async function as(user, tool) {
   await page.waitForSelector('tbody tr')
   await page.waitForTimeout(400)
 }
+const view = (id) => page.click(`.cmdbar .view:has-text("${id}")`)
+
+await signOut()
+await shot('00-sign-in')
 
 await as('priya', 'kyc')
-await page.screenshot({ path: 'docs/screens/01-kyc-analyst.png' })
+await page.click('.avatar-btn')
+await page.waitForSelector('.menu')
+await shot('01-kyc-analyst-profile-menu')
+await page.keyboard.press('Escape')
+await page.mouse.click(600, 300)
+
+await page.click('tbody tr:first-child')
+await page.waitForSelector('.pane .ai')
+await page.waitForFunction(() => !document.querySelector('.pane .ai')?.textContent?.includes('Summarising'), null, { timeout: 45000 })
+await page.waitForTimeout(500)
+await shot('02-kyc-case-pane-ai-summary-policy')
+
+await page.fill('.ask input', 'high risk cases missing proof of address')
+await page.press('.ask input', 'Enter')
+await page.waitForSelector('.nl-explain')
+await page.waitForTimeout(400)
+await shot('03-kyc-natural-language-filter')
 
 await as('marcus', 'kyc')
-await page.dblclick('tbody tr:first-child')
-await page.waitForSelector('.pane')
-await page.waitForTimeout(300)
-await page.screenshot({ path: 'docs/screens/02-kyc-lead-record-pane.png' })
+await page.click('.ai-btn')
+await page.waitForSelector('.banner.info')
+await page.waitForTimeout(500)
+await shot('04-kyc-devin-policy-review-run')
 
 await as('sofia', 'refunds')
-await page.screenshot({ path: 'docs/screens/03-refunds-ops.png' })
+await page.click('th:has-text("Amount")')
+await page.waitForTimeout(200)
+await shot('05-refunds-ops-sorted-by-amount')
 
 await as('dan', 'refunds')
-await page.selectOption('.titlebar select', 'large')
+await view('Over 1,000')
 await page.waitForTimeout(500)
 await page.click('tbody tr:first-child')
-await page.screenshot({ path: 'docs/screens/04-refunds-finance-large.png' })
+await page.waitForSelector('.pane .ai')
+await page.waitForFunction(() => !document.querySelector('.pane .ai')?.textContent?.includes('Summarising'), null, { timeout: 45000 })
+await page.waitForTimeout(400)
+await shot('06-refunds-finance-large-pane')
 
 await as('amara', 'flags')
 await page.click('tbody tr:first-child')
-await page.dblclick('tbody tr:first-child')
 await page.waitForSelector('.pane')
 await page.waitForTimeout(300)
-await page.screenshot({ path: 'docs/screens/05-flags-release-manager.png' })
+await shot('07-flags-release-manager')
 
 await as('dan', 'chargebacks')
-await page.selectOption('.titlebar select', 'due48')
-await page.waitForTimeout(500)
-await page.screenshot({ path: 'docs/screens/06-chargebacks-4th-tool.png' })
+await shot('08-chargebacks-4th-tool')
 
 await as('auditor', 'refunds')
-await page.screenshot({ path: 'docs/screens/07-refunds-readonly-auditor.png' })
+await shot('09-refunds-readonly-auditor')
 
 await browser.close()
 console.log('done')

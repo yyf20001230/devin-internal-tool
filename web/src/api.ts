@@ -4,13 +4,16 @@ export type Filter = Record<string, unknown>
 export interface FieldSpec {
   name: string; label: string; type: FieldType; required: boolean; options: string[]
   default: unknown; visible_to: string[] | null; mask: 'full' | 'last4'; readonly: boolean; width: number | null
-  masked: boolean
+  computed: boolean; masked: boolean
 }
 export interface ViewSpec { id: string; name: string; filter: Filter; columns: string[]; sort: string | null; mine: boolean }
 export interface ActionSpec {
   id: string; label: string; roles: string[]; set: Record<string, unknown>; only_when: Filter
-  requires_comment: boolean; confirm: string | null; webhook: string | null; destructive: boolean; allowed: boolean
+  requires_comment: boolean; confirm: string | null; webhook: string | null; destructive: boolean; icon: string | null
+  allowed: boolean
 }
+export interface CheckSpec { id: string; clause: string; title: string; on_fail: 'flag' | 'review' }
+export interface AutoReviewSpec { policy: string; scope: Filter; clear_action: string | null; flag_action: string | null; actor: string }
 export interface TileSpec {
   type: 'kpi' | 'group' | 'series'; title: string; metric: 'count' | 'sum' | 'avg'; field: string | null
   chart: 'bar' | 'donut' | 'hbar'; format: 'number' | 'money' | 'percent' | 'hours'
@@ -18,13 +21,27 @@ export interface TileSpec {
 }
 export interface Can { read: boolean; create: boolean; update: boolean; export: boolean }
 export interface ToolSpec {
-  id: string; name: string; app: string; description: string; entity: string; title_field: string
+  id: string; name: string; app: string; description: string; icon: string; entity: string; title_field: string
   assignee_field: string | null; fields: FieldSpec[]; views: ViewSpec[]; actions: ActionSpec[]; dashboard: TileSpec[]
+  checks: CheckSpec[]; auto_review: AutoReviewSpec | null
   can: Can
 }
-export interface ToolSummary { id: string; name: string; app: string; description: string; can: Can }
-export interface User { id: string; name: string; roles: string[] }
+export interface ToolSummary { id: string; name: string; app: string; description: string; icon: string; can: Can }
+export interface User { id: string; name: string; roles: string[]; title: string }
+export type Verdict = 'Cleared' | 'Needs review' | 'Flagged'
+export interface CheckResult {
+  id: string; clause: string; title: string; passed: boolean; outcome: 'pass' | 'review' | 'flag'; detail: string
+  clause_title: string; clause_text: string; policy: string
+}
+export interface Review { verdict: Verdict; policy: string | null; checks: CheckResult[] }
+export interface AutoReviewResult { cleared: string[]; flagged: string[]; review: string[] }
+export interface KnowledgeSummary { id: string; title: string; summary: string; clauses: number }
+export interface Clause { code: string; title: string; text: string; doc: string }
+export interface KnowledgeDoc { id: string; title: string; summary: string; body: string; clauses: Clause[] }
 export interface Me { user: User; roles: Record<string, string>; tools: ToolSummary[] }
+export interface Summary { headline: string; bullets: string[]; recommendation: string; source: string }
+export interface QueryResult { filter: Filter; sort: string | null; explanation: string; source: string; rows: Rec[] }
+export interface AIStatus { provider: string; model: string | null; last_error: string | null }
 export type Rec = Record<string, unknown> & { id: number }
 export interface AuditEntry {
   id: number; ts: string; record_id: number | null; user_id: string; action: string; comment: string | null
@@ -37,9 +54,11 @@ export class ApiError extends Error {
   constructor(status: number, msg: string) { super(msg); this.status = status }
 }
 
-let currentUser = localStorage.getItem('user') || 'priya'
+// Prototype session: the signed-in user id travels as a header. Production swaps this for an OIDC/Entra ID token.
+let currentUser = localStorage.getItem('user') || ''
 export const getUser = () => currentUser
-export const setUser = (u: string) => { currentUser = u; localStorage.setItem('user', u) }
+export const signIn = (u: string) => { currentUser = u; localStorage.setItem('user', u) }
+export const signOut = () => { currentUser = ''; localStorage.removeItem('user'); localStorage.removeItem('tool') }
 
 async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
   const r = await fetch(path, { ...init, headers: { 'Content-Type': 'application/json', 'X-User': currentUser, ...(init.headers || {}) } })
@@ -65,6 +84,14 @@ export const api = {
   audit: (id: string, rid?: number) => req<AuditEntry[]>(`/api/tools/${id}/audit${rid ? `?record_id=${rid}` : ''}`),
   integrations: (id: string) => req<IntegrationEntry[]>(`/api/tools/${id}/integrations`),
   exportCsv: (id: string, view: string) => req<string>(`/api/tools/${id}/records.csv?view=${view}`),
+  review: (id: string, rid: number) => req<Review>(`/api/tools/${id}/records/${rid}/review`),
+  autoReview: (id: string, view: string) => req<AutoReviewResult>(`/api/tools/${id}/auto-review?view=${view}`, { method: 'POST' }),
+  knowledge: () => req<KnowledgeSummary[]>('/api/knowledge'),
+  knowledgeDoc: (id: string) => req<KnowledgeDoc>(`/api/knowledge/${id}`),
+  summary: (id: string, rid: number) => req<Summary>(`/api/tools/${id}/ai/summary`, { method: 'POST', body: JSON.stringify({ record_id: rid }) }),
+  query: (id: string, question: string, view: string) =>
+    req<QueryResult>(`/api/tools/${id}/ai/query`, { method: 'POST', body: JSON.stringify({ question, view }) }),
+  aiStatus: () => req<AIStatus>('/api/ai'),
 }
 
 export const fmt = {
