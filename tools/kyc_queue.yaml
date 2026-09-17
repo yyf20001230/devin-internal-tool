@@ -12,7 +12,7 @@ fields:
   - {name: applicant, label: Applicant, type: text, required: true}
   - {name: country, label: Country, type: text, width: 70}
   - {name: risk, label: Risk, type: choice, options: [Low, Medium, High], default: Medium, width: 90}
-  - {name: risk_score, label: Score, type: number, width: 70}
+  - {name: risk_score, label: Score, type: number, width: 90}
   - {name: sanctions_hit, label: Sanctions / PEP, type: boolean, default: false, width: 110}
   - {name: docs_complete, label: Docs, type: percent, width: 80}
   - {name: address_verified, label: Address verified, type: boolean, default: false, width: 110}
@@ -26,9 +26,9 @@ fields:
     type: date
     visible_to: [compliance_lead]
   - {name: status, label: Status, type: choice, options: [Pending, In review, Documents requested, Escalated, Approved, Rejected], default: Pending, width: 130}
-  - {name: assignee, label: Assigned to, type: text}
-  - {name: sla_due, label: SLA due, type: datetime}
-  - {name: opened_at, label: Opened, type: datetime}
+  - {name: assignee, label: Assigned to, type: text, width: 130}
+  - {name: sla_due, label: SLA due, type: datetime, width: 120}
+  - {name: opened_at, label: Opened, type: datetime, width: 140}
   - {name: notes, label: Notes, type: multiline}
 
 views:

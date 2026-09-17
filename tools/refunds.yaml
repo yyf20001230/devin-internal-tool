@@ -13,10 +13,10 @@ fields:
   - {name: amount, label: Amount, type: money, required: true, width: 100}
   - {name: currency, label: Ccy, type: choice, options: [GBP, EUR, USD], default: GBP, width: 60}
   - {name: rail, label: Rail, type: choice, options: [Card, Bank transfer, Wallet], default: Card, width: 110}
-  - {name: reason, label: Reason, type: choice, options: [Duplicate charge, Goods not received, Customer request, Fraud reversal, Subscription cancelled, Pricing error], width: 160}
+  - {name: reason, label: Reason, type: choice, options: [Duplicate charge, Goods not received, Customer request, Fraud reversal, Subscription cancelled, Pricing error], width: 190}
   - {name: risk, label: Risk, type: choice, options: [Low, Medium, High], default: Low, width: 80}
-  - {name: days_since_purchase, label: Days since purchase, type: number, width: 90}
-  - {name: prior_refunds_90d, label: Prior refunds (90d), type: number, default: 0, width: 90}
+  - {name: days_since_purchase, label: Days since purchase, type: number, width: 140}
+  - {name: prior_refunds_90d, label: Prior refunds (90d), type: number, default: 0, width: 130}
   - {name: customer_email, label: Customer email, type: text, visible_to: [payments_ops, finance]}
   - name: bank_account
     label: Destination account
@@ -24,8 +24,8 @@ fields:
     visible_to: [finance]     # only finance sees full destination account
     mask: last4
   - {name: status, label: Status, type: choice, options: [Awaiting approval, On hold, Approved, Rejected, Paid], default: Awaiting approval, width: 130}
-  - {name: reviewer, label: Reviewer, type: text}
-  - {name: requested_at, label: Requested, type: datetime}
+  - {name: reviewer, label: Reviewer, type: text, width: 130}
+  - {name: requested_at, label: Requested, type: datetime, width: 140}
   - {name: notes, label: Notes, type: multiline}
 
 views:

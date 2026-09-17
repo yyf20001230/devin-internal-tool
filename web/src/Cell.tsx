@@ -1,6 +1,5 @@
 import type { FieldSpec, Rec } from './api'
 import { fmt } from './api'
-import { Icon } from './Icon'
 
 const STATUS_COLOURS: Record<string, string> = {
   Approved: 'green', Paid: 'green', Low: 'green', Won: 'green', Submitted: 'green', Open: 'blue',
@@ -14,15 +13,8 @@ export const pillColour = (v: string) => STATUS_COLOURS[v] ?? ''
 // Only the record's status is a pill; everything else is a dot, an icon or plain text so a
 // row reads as one line of data rather than a stack of tags.
 const PILL_FIELDS = new Set(['status'])
-const VERDICT_ICON: Record<string, { icon: string; cls: string }> = {
-  Cleared: { icon: 'check', cls: 'green' }, 'Needs review': { icon: 'alert', cls: 'amber' }, Flagged: { icon: 'x', cls: 'red' },
-}
 
 function Choice({ f, v }: { f: FieldSpec; v: string }) {
-  if (f.name === 'policy_verdict') {
-    const m = VERDICT_ICON[v]
-    return m ? <span className={`verdict ${m.cls}`} title={`Policy check: ${v}`}><Icon name={m.icon} size={13} />{v}</span> : <>{v}</>
-  }
   const colour = STATUS_COLOURS[v] ?? ''
   if (PILL_FIELDS.has(f.name)) return <span className={`pill ${colour}`}>{v}</span>
   if (colour) return <span className={`dotted ${colour}`}><span className="dot" />{v}</span>

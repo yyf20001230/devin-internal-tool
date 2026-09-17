@@ -137,7 +137,7 @@ class ToolSpec(BaseModel):
     def _check(self):
         if self.checks and not any(f.name == VERDICT_FIELD for f in self.fields):
             self.fields.append(FieldSpec(name=VERDICT_FIELD, label="Policy check", type="choice",
-                                         options=list(VERDICTS), readonly=True, computed=True, width=110))
+                                         options=list(VERDICTS), readonly=True, computed=True, width=135))
         names = {f.name for f in self.fields}
         if self.title_field not in names:
             raise ValueError(f"title_field '{self.title_field}' is not a field")
