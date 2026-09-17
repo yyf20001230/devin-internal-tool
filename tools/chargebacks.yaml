@@ -58,11 +58,13 @@ actions:
     set: {evidence_status: Submitted}
     webhook: https://hooks.internal/disputes/submit-evidence
   - id: won
+    decision: approve
     label: Mark won
     roles: [payments_ops, finance]
     only_when: {status: Open, evidence_status: Submitted}
     set: {status: Won}
   - id: lost
+    decision: reject
     label: Mark lost
     roles: [payments_ops, finance]
     only_when: {status: Open, evidence_status: Submitted}

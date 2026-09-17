@@ -10,7 +10,7 @@ export interface ViewSpec { id: string; name: string; filter: Filter; columns: s
 export interface ActionSpec {
   id: string; label: string; roles: string[]; set: Record<string, unknown>; only_when: Filter
   requires_comment: boolean; confirm: string | null; webhook: string | null; destructive: boolean; icon: string | null
-  allowed: boolean
+  decision: 'approve' | 'reject' | 'info' | null; allowed: boolean
 }
 export interface CheckSpec { id: string; clause: string; title: string; on_fail: 'flag' | 'review' }
 export interface AutoReviewSpec { policy: string; scope: Filter; clear_action: string | null; flag_action: string | null; actor: string }

@@ -11,15 +11,15 @@ fields:
   - {name: key, label: Flag key, type: text, required: true}
   - {name: service, label: Service, type: choice, options: [payments-api, refunds-svc, onboarding, ledger, web-app], required: true, width: 120}
   - {name: description, label: Description, type: text}
-  - {name: dev, label: DEV, type: boolean, default: true, width: 60}
-  - {name: uat, label: UAT, type: boolean, default: false, width: 60}
-  - {name: prod, label: PROD, type: boolean, default: false, width: 60}
-  - {name: rollout, label: PROD rollout %, type: percent, default: 0, width: 110}
+  - {name: dev, label: DEV, type: boolean, default: true, width: 80}
+  - {name: uat, label: UAT, type: boolean, default: false, width: 80}
+  - {name: prod, label: PROD, type: boolean, default: false, width: 90}
+  - {name: rollout, label: PROD rollout %, type: percent, default: 0, width: 140}
   - {name: change_request, label: Change request, type: text, width: 110}
-  - {name: cr_status, label: CR status, type: choice, options: [None, Pending, Approved, Rejected], default: None, width: 90}
-  - {name: owner, label: Owner, type: text}
-  - {name: last_changed, label: Last changed, type: datetime}
-  - {name: stale, label: Stale, type: boolean, default: false, width: 60}
+  - {name: cr_status, label: CR status, type: choice, options: [None, Pending, Approved, Rejected], default: None, width: 120}
+  - {name: owner, label: Owner, type: text, width: 140}
+  - {name: last_changed, label: Last changed, type: datetime, width: 140}
+  - {name: stale, label: Stale, type: boolean, default: false, width: 80}
 
 views:
   - id: all
@@ -54,10 +54,20 @@ actions:
     requires_comment: true
     webhook: https://hooks.internal/change-management/create-cr
   - id: approve_cr
+    decision: approve
     label: Approve change request
     roles: [release_manager]
     only_when: {cr_status: Pending}
     set: {cr_status: Approved}
+  - id: reject_cr
+    decision: reject
+    label: Reject change request
+    icon: x
+    roles: [release_manager]
+    only_when: {cr_status: Pending}
+    set: {cr_status: Rejected}
+    requires_comment: true
+    destructive: true
   - id: enable_prod
     label: Enable in PROD
     roles: [release_manager]
