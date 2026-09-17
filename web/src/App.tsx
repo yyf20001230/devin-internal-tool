@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AIStatus, ActionSpec, AutoReviewResult, FieldSpec, IntegrationEntry, Me, QueryResult, Rec, TileSpec, ToolSpec, User } from './api'
-import { ApiError, api, fmt, getUser, signIn, signOut } from './api'
+import { ApiError, api, fmt, getUser, matches, signIn, signOut, stateAllows } from './api'
 import { Cell, isNumeric } from './Cell'
 import { Dashboard } from './Dashboard'
 import { Icon, actionIcon } from './Icon'
@@ -12,25 +12,8 @@ type Sort = { field: string; dir: 'asc' | 'desc' } | null
 
 const APP_BLURB: Record<string, string> = {
   'Compliance Operations': 'KYC review, sanctions screening and onboarding decisions.',
-  'Payments Operations': 'Refund approvals, holds and payout release.',
-  'Release Control': 'Feature-flag changes gated by change requests.',
-}
-
-function matches(cond: unknown, v: unknown): boolean {
-  if (Array.isArray(cond)) return cond.includes(v)
-  if (cond && typeof cond === 'object') {
-    return Object.entries(cond as Record<string, unknown>).every(([op, x]) => {
-      if (typeof x === 'string' && x.startsWith('now')) {
-        const m = /^now([+-]\d+)([hdm])$/.exec(x)
-        const ms = m ? Number(m[1]) * { h: 36e5, d: 864e5, m: 6e4 }[m[2] as 'h' | 'd' | 'm'] : 0
-        const t = Date.now() + ms, tv = new Date(String(v)).getTime()
-        return op === 'lt' ? tv < t : op === 'lte' ? tv <= t : op === 'gt' ? tv > t : op === 'gte' ? tv >= t : op === 'ne' ? tv !== t : tv === t
-      }
-      const n = Number(v), m = Number(x)
-      return op === 'lt' ? n < m : op === 'lte' ? n <= m : op === 'gt' ? n > m : op === 'gte' ? n >= m : op === 'ne' ? v !== x : op === 'contains' ? String(v).includes(String(x)) : v === x
-    })
-  }
-  return typeof cond === 'boolean' ? Boolean(v) === cond : v === cond
+  'Payments Operations': 'Refund approvals and payout release.',
+  'Release Control': 'Feature-flag toggles, audited against change requests.',
 }
 
 function compare(f: FieldSpec | undefined, a: unknown, b: unknown): number {
@@ -168,8 +151,7 @@ export default function App() {
     })
   }
 
-  const actionEnabled = useCallback((a: ActionSpec, r: Rec) =>
-    a.allowed && Object.entries(a.only_when).every(([k, cond]) => matches(cond, r[k])), [])
+  const actionEnabled = useCallback((a: ActionSpec, r: Rec) => a.allowed && stateAllows(a, r), [])
 
   function startAction(a: ActionSpec, r: Rec) {
     if (a.requires_comment || a.confirm) setPending({ action: a, record: r, comment: '' })

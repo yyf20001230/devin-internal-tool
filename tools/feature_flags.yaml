@@ -40,12 +40,34 @@ views:
     filter: {stale: true}
     columns: [key, service, prod, rollout, owner, last_changed]
 
+# Engineers toggle environments directly; FF-2.1 is enforced by the policy check (flag + audit),
+# not by blocking the toggle. Change requests stay a release-manager approval.
 actions:
   - id: enable_uat
     label: Enable in UAT
     roles: [engineer, release_manager]
     only_when: {uat: false}
     set: {uat: true}
+  - id: disable_uat
+    label: Disable in UAT
+    roles: [engineer, release_manager]
+    only_when: {uat: true}
+    set: {uat: false}
+  - id: enable_prod
+    label: Enable in PROD
+    roles: [engineer, release_manager]
+    only_when: {prod: false}
+    set: {prod: true}
+    confirm: Flip this flag on in PROD? It syncs to the serving store immediately. Without an approved change request the policy check will flag it (FF-2.1).
+    webhook: https://hooks.internal/flag-store/sync
+  - id: kill_switch
+    label: Kill switch (PROD off)
+    roles: [engineer, release_manager]
+    only_when: {prod: true}
+    set: {prod: false, rollout: 0}
+    requires_comment: true
+    destructive: true
+    webhook: https://hooks.internal/flag-store/sync
   - id: request_release
     label: Request PROD release
     roles: [engineer, release_manager]
@@ -68,21 +90,6 @@ actions:
     set: {cr_status: Rejected}
     requires_comment: true
     destructive: true
-  - id: enable_prod
-    label: Enable in PROD
-    roles: [release_manager]
-    only_when: {cr_status: Approved, prod: false}
-    set: {prod: true}
-    confirm: Flip this flag on in PROD? It syncs to the serving store immediately.
-    webhook: https://hooks.internal/flag-store/sync
-  - id: kill_switch
-    label: Kill switch (PROD off)
-    roles: [release_manager]
-    only_when: {prod: true}
-    set: {prod: false, rollout: 0}
-    requires_comment: true
-    destructive: true
-    webhook: https://hooks.internal/flag-store/sync
 
 # Automated policy checks. Each cites a clause in knowledge/feature_flag_policy.md.
 checks:

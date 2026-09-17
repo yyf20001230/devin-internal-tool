@@ -199,6 +199,12 @@ td .link { color: var(--text); font-weight: 600; }
 .pane-tabs .view { padding: 7px 10px; display: inline-flex; align-items: center; gap: 6px; }
 .pane-tabs .dotted .dot { width: 6px; height: 6px; }
 .decisions { padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+.switches { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.switch { flex: 1 1 auto; display: inline-flex; align-items: center; gap: 8px; padding: 7px 10px; font: inherit; font-size: 12.5px; color: var(--text); background: var(--bg-3); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.switch:hover:not(:disabled) { border-color: var(--line-strong); }
+.switch:disabled { cursor: not-allowed; opacity: .55; }
+.switch .sub { margin-left: auto; }
+.switch .sub.green { color: var(--green); }
 .decision-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .decision-row .btn { flex: 1 1 auto; justify-content: center; padding: 8px 8px; font-size: 12.5px; }
 .btn.approve { background: rgba(63,185,80,.14); color: var(--green); border-color: rgba(63,185,80,.5); }

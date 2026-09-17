@@ -158,15 +158,21 @@ def test_refund_amount_threshold_routes_to_finance(client):
 def test_webhook_action_logs_integration(client):
     flag = next(r for r in client.get("/api/tools/flags/records?view=all", headers=h("lin")).json() if r["cr_status"] == "None" and not r["prod"])
     rid = flag["id"]
-    # engineer: cannot enable PROD without an approved CR, can request one (webhook -> change management)
-    assert client.post("/api/tools/flags/actions/enable_prod", json={"record_id": rid}, headers=h("lin")).status_code == 403
-    assert client.post("/api/tools/flags/actions/request_release", json={"record_id": rid, "comment": "ship it"}, headers=h("lin")).json()["cr_status"] == "Pending"
-    # release manager: approve CR, then enable
-    assert client.post("/api/tools/flags/actions/enable_prod", json={"record_id": rid}, headers=h("amara")).status_code == 400
-    assert client.post("/api/tools/flags/actions/approve_cr", json={"record_id": rid}, headers=h("amara")).json()["cr_status"] == "Approved"
-    assert client.post("/api/tools/flags/actions/enable_prod", json={"record_id": rid}, headers=h("amara")).json()["prod"] == 1
-    log = client.get("/api/tools/flags/integrations", headers=h("amara")).json()
+    # engineer toggles PROD directly (webhook -> flag store); FF-2.1 is enforced by the policy check, not the toggle
+    assert client.post("/api/tools/flags/actions/enable_prod", json={"record_id": rid}, headers=h("lin")).json()["prod"] == 1
+    log = client.get("/api/tools/flags/integrations", headers=h("lin")).json()
     assert log[0]["webhook"].endswith("/flag-store/sync") and log[0]["payload"]["title"] == flag["key"]
+    review = client.get(f"/api/tools/flags/records/{rid}/review", headers=h("lin")).json()
+    assert review["verdict"] == "Flagged" and any(c["clause"] == "FF-2.1" and not c["passed"] for c in review["checks"])
+    # CR approval stays a release-manager decision; engineer cannot approve their own
+    assert client.post("/api/tools/flags/actions/request_release", json={"record_id": rid, "comment": "ship it"}, headers=h("lin")).json()["cr_status"] == "Pending"
+    assert client.post("/api/tools/flags/actions/approve_cr", json={"record_id": rid}, headers=h("lin")).status_code == 403
+    assert client.post("/api/tools/flags/actions/approve_cr", json={"record_id": rid}, headers=h("amara")).json()["cr_status"] == "Approved"
+    review = client.get(f"/api/tools/flags/records/{rid}/review", headers=h("lin")).json()
+    assert all(c["passed"] for c in review["checks"] if c["clause"] == "FF-2.1")
+    # kill switch is open to engineers too, but needs a comment
+    assert client.post("/api/tools/flags/actions/kill_switch", json={"record_id": rid}, headers=h("lin")).status_code == 400
+    assert client.post("/api/tools/flags/actions/kill_switch", json={"record_id": rid, "comment": "rollback"}, headers=h("lin")).json()["prod"] == 0
 
 
 def test_webhook_payloads_are_signed_with_env_secret_only(client, monkeypatch):
@@ -205,14 +211,15 @@ def test_create_validates_choices_and_required(client):
     assert r.status_code == 201 and r.json()["status"] == "Awaiting approval" and r.json()["currency"] == "GBP"
 
 
-def test_refund_hold_and_resume_cycle(client):
+def test_refund_decisions_are_approve_reject_or_request_info(client):
+    tool = client.get("/api/tools/refunds", headers=h("sofia")).json()
+    assert {a["id"] for a in tool["actions"]}.isdisjoint({"hold", "resume"})
+    assert {a["decision"] for a in tool["actions"] if a["decision"]} == {"approve", "reject", "info"}
     row = next(r for r in client.get("/api/tools/refunds/records?view=awaiting", headers=h("sofia")).json() if r["amount"] < 1000)
     rid = row["id"]
-    assert client.post("/api/tools/refunds/actions/hold", json={"record_id": rid}, headers=h("sofia")).status_code == 400  # comment required
-    assert client.post("/api/tools/refunds/actions/hold", json={"record_id": rid, "comment": "awaiting merchant evidence"}, headers=h("sofia")).json()["status"] == "On hold"
-    assert client.post("/api/tools/refunds/actions/approve", json={"record_id": rid}, headers=h("sofia")).status_code == 400
-    assert rid in {r["id"] for r in client.get("/api/tools/refunds/records?view=hold", headers=h("sofia")).json()}
-    assert client.post("/api/tools/refunds/actions/resume", json={"record_id": rid}, headers=h("sofia")).json()["status"] == "Awaiting approval"
+    assert client.post("/api/tools/refunds/actions/request_info", json={"record_id": rid}, headers=h("sofia")).json()["status"] == "Awaiting approval"
+    assert client.post("/api/tools/refunds/actions/reject", json={"record_id": rid}, headers=h("sofia")).status_code == 400  # comment required
+    assert client.post("/api/tools/refunds/actions/reject", json={"record_id": rid, "comment": "no evidence"}, headers=h("sofia")).json()["status"] == "Rejected"
 
 
 # ---- knowledge base + policy checks -------------------------------------------------------------

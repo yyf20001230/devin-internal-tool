@@ -149,9 +149,11 @@ Secrets store; nothing in the repo ever holds a value.
 
 **Working a queue fast:** rows show only what you need to triage; open a record for the full
 detail in a three-tab pane: **Summary** (AI case summary + Approve / Reject / Request more info,
-plus any secondary actions such as hold or kill switch), **Policy check** (the clause checks and
-the Ask-the-policy box) and **Details** (every field, edit, audit trail). Which action fills each
-decision slot comes from `decision: approve|reject|info` on the tool's YAML actions. ↑/↓ move
+environment switches on boolean fields, plus any secondary actions), **Policy check** (the clause
+checks and the Ask-the-policy box) and **Details** (every field, edit, audit trail). Which action
+fills each decision slot comes from `decision: approve|reject|info` on the tool's YAML actions; a
+boolean field becomes a switch when an action `set`s it (flags: UAT / PROD). Decision buttons only
+show when the record is in a state where they apply, and grey out only for a missing role. ↑/↓ move
 through the queue, Enter opens the record, Esc closes it. Acting on an open record advances to
 the next one in the queue.
 
@@ -161,10 +163,10 @@ Sign in as a demo identity — each sees only the boards its roles grant:
 |---|---|---|---|
 | Priya | analyst | Compliance Ops | ID document / DOB masked; escalate / request docs; cannot approve or export |
 | Marcus | compliance_lead, analyst | Compliance Ops | sees masked columns, approve / reject (comment), export, run policy review |
-| Sofia | payments_ops | Payments Ops | refunds < 1,000; bank account masked; hold / approve small |
+| Sofia | payments_ops | Payments Ops | refunds < 1,000; bank account masked; approve small / request info |
 | Dan | finance, payments_ops | Payments Ops | approves > 1,000, sends to payout (signed webhook), exports |
-| Lin | engineer | Release Control | DEV / UAT toggles, *requests* a PROD release |
-| Amara | release_manager, engineer | Release Control | approves CR, flips PROD, kill switch |
+| Lin | engineer | Release Control | UAT / PROD switches and kill switch; PROD without an approved CR is *flagged* (FF-2.1), not blocked |
+| Amara | release_manager, engineer | Release Control | approves / rejects change requests |
 | External Auditor | readonly | Compliance + Payments | sees everything, changes nothing, sensitive columns masked |
 
 `Devin AI` is a service identity: it appears in audit history as the actor of automated

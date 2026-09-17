@@ -12,6 +12,27 @@ export interface ActionSpec {
   requires_comment: boolean; confirm: string | null; webhook: string | null; destructive: boolean; icon: string | null
   decision: 'approve' | 'reject' | 'info' | null; allowed: boolean
 }
+
+// Client-side mirror of the server's filter evaluation, used for view membership and action guards.
+export function matches(cond: unknown, v: unknown): boolean {
+  if (Array.isArray(cond)) return cond.includes(v)
+  if (cond && typeof cond === 'object') {
+    return Object.entries(cond as Record<string, unknown>).every(([op, x]) => {
+      if (typeof x === 'string' && x.startsWith('now')) {
+        const m = /^now([+-]\d+)([hdm])$/.exec(x)
+        const ms = m ? Number(m[1]) * { h: 36e5, d: 864e5, m: 6e4 }[m[2] as 'h' | 'd' | 'm'] : 0
+        const t = Date.now() + ms, tv = new Date(String(v)).getTime()
+        return op === 'lt' ? tv < t : op === 'lte' ? tv <= t : op === 'gt' ? tv > t : op === 'gte' ? tv >= t : op === 'ne' ? tv !== t : tv === t
+      }
+      const n = Number(v), m = Number(x)
+      return op === 'lt' ? n < m : op === 'lte' ? n <= m : op === 'gt' ? n > m : op === 'gte' ? n >= m : op === 'ne' ? v !== x : op === 'contains' ? String(v).includes(String(x)) : v === x
+    })
+  }
+  return typeof cond === 'boolean' ? Boolean(v) === cond : v === cond
+}
+
+/** The record is in a state where this action applies (ignores the caller's role). */
+export const stateAllows = (a: ActionSpec, r: Rec) => Object.entries(a.only_when).every(([k, cond]) => matches(cond, r[k]))
 export interface CheckSpec { id: string; clause: string; title: string; on_fail: 'flag' | 'review' }
 export interface AutoReviewSpec { policy: string; scope: Filter; clear_action: string | null; flag_action: string | null; actor: string }
 export interface TileSpec {
