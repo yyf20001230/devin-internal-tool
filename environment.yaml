@@ -16,6 +16,9 @@ install:
   - npm --prefix web ci
   - npm ci                         # playwright, for scripts/screenshots.mjs
   - npx playwright install chromium
+  # optional: local Kubernetes for `make minikube` (needs Docker on the machine)
+  - curl -sLo /tmp/minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64 && sudo install /tmp/minikube /usr/local/bin/minikube
+  - curl -sLo /tmp/kubectl "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && sudo install /tmp/kubectl /usr/local/bin/kubectl
 
 # Runs at the start of every session (fast, idempotent).
 initialize:
