@@ -1,4 +1,7 @@
-"""AI features embedded in the tools: case summaries and natural-language filters.
+"""AI features embedded in the tools: case summaries, natural-language filters and policy Q&A.
+
+Policy context is *retrieved* from the knowledge-base index (server/kb.py) - the model is only ever shown
+clauses that the index returned for the record or question, and every answer carries those citations.
 
 Two providers behind one interface:
   * OpenAIProvider  - real LLM, used when OPENAI_API_KEY is set (Devin secrets store -> env var, never committed)
@@ -13,22 +16,41 @@ import json
 import os
 import re
 import time
-from typing import Callable, Protocol
+from typing import Protocol
 
 import httpx
 from pydantic import BaseModel, ValidationError
 
 from .engine import Engine, Invalid
-from .knowledge import Clause
+from .kb import Hit, KnowledgeBase
 from .spec import Filter, ToolSpec, User
 
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+
+
+class Source(BaseModel):
+    """A knowledge-base chunk the AI was given. `why` says how it got there."""
+    clause: str | None
+    title: str
+    doc: str
+    doc_title: str
+    text: str
+    score: float | None = None
+    why: str  # "cited by check" | "retrieved"
 
 
 class Summary(BaseModel):
     headline: str
     bullets: list[str]
     recommendation: str
+    source: str
+    sources: list[Source] = []
+
+
+class Answer(BaseModel):
+    answer: str
+    cites: list[str]          # clause codes the answer relies on
+    sources: list[Source]     # everything retrieved, best match first
     source: str
 
 
@@ -46,6 +68,8 @@ class Provider(Protocol):
     def summarize(self, context: dict) -> Summary: ...
 
     def query(self, question: str, schema: dict) -> Query: ...
+
+    def answer(self, question: str, context: dict) -> Answer: ...
 
 
 # ---- redaction ------------------------------------------------------------------------------
@@ -99,6 +123,16 @@ class RulesProvider:
         }.get(verdict, "Review manually.")
         return Summary(headline=f"{title}: {verdict.lower()} by automated policy checks", bullets=bullets,
                        recommendation=rec_text, source=self.name)
+
+    def answer(self, question: str, ctx: dict) -> Answer:
+        """Extractive: quote the best-matching clauses; no generation."""
+        srcs = [Source(**s) for s in ctx["sources"]]
+        if not srcs:
+            return Answer(answer="Nothing in the policy knowledge base matches that question.", cites=[],
+                          sources=[], source=self.name)
+        top = srcs[:2]
+        text = " ".join(f"{s.clause or s.title}: {s.text}" for s in top)
+        return Answer(answer=text, cites=[s.clause for s in top if s.clause], sources=srcs, source=self.name)
 
     def query(self, question: str, schema: dict) -> Query:
         q = question.lower()
@@ -228,7 +262,8 @@ class OpenAIProvider:
         system = (
             "You are a compliance operations assistant inside an internal fintech tool. Summarise the record for a "
             "human reviewer in plain English. Be specific, cite policy clause codes (e.g. KYC-2.1) when you refer to "
-            "a check, never invent facts not present in the input, and never speculate about identity documents "
+            "a check or a policy_excerpt (these were retrieved from the policy knowledge base for this record; use "
+            "only them for policy statements), never invent facts not present in the input, and never speculate about identity documents "
             "or bank details (they have been removed). Return JSON: {\"headline\": str (<=90 chars), "
             "\"bullets\": [str, ...] (3-5 items), \"recommendation\": str (one sentence, what the reviewer should do)}"
         )
@@ -240,6 +275,26 @@ class OpenAIProvider:
         except (httpx.HTTPError, KeyError, ValueError, ValidationError) as e:
             self._fail(e)
             return self.fallback.summarize(ctx)
+
+    def answer(self, question: str, ctx: dict) -> Answer:
+        system = (
+            "You answer questions about internal fintech policy for an operations reviewer. Use ONLY the policy "
+            "excerpts provided (retrieved from the knowledge base); if they do not answer the question say so "
+            "plainly. Cite clause codes inline (e.g. KYC-3.2). If a record is provided, apply the policy to it "
+            "concretely. Never speculate about identity documents or bank details (they have been removed). "
+            "Return JSON: {\"answer\": str (<=120 words), \"cites\": [clause codes actually relied upon]}"
+        )
+        payload = {"question": question, "policy_excerpts": ctx["sources"], "record": ctx.get("record"),
+                   "review": ctx.get("review")}
+        try:
+            out = self._chat(system, json.dumps(payload, default=str))
+            known = {s["clause"] for s in ctx["sources"] if s.get("clause")}
+            cites = [str(c) for c in out.get("cites", []) if str(c) in known]
+            return Answer(answer=str(out["answer"]), cites=cites, sources=[Source(**s) for s in ctx["sources"]],
+                          source=self.name)
+        except (httpx.HTTPError, KeyError, ValueError, ValidationError) as e:
+            self._fail(e)
+            return self.fallback.answer(question, ctx)
 
     def query(self, question: str, schema: dict) -> Query:
         system = (
@@ -271,28 +326,97 @@ def make_provider() -> Provider:
 
 # ---- service --------------------------------------------------------------------------------
 class AIService:
-    def __init__(self, engine: Engine, provider: Provider, clause_lookup: Callable[[str], Clause | None]):
+    RETRIEVE_K = 4
+
+    def __init__(self, engine: Engine, provider: Provider, kb: KnowledgeBase):
         self.engine = engine
         self.provider = provider
-        self.clause = clause_lookup
+        self.kb = kb
 
+    # ---- retrieval helpers ------------------------------------------------------------------
+    @staticmethod
+    def _hit_source(h: Hit) -> Source:
+        c = h.chunk
+        return Source(clause=c.clause, title=c.title, doc=c.doc, doc_title=c.doc_title, text=c.text,
+                      score=h.score, why="retrieved")
+
+    def _policy_docs(self, spec: ToolSpec) -> list[str] | None:
+        """Restrict retrieval to the policy documents this tool's checks cite (all docs if it cites none)."""
+        docs = {cl.doc for c in spec.checks if (cl := self.kb.knowledge.clause(c.clause))}
+        if spec.auto_review:
+            docs.add(spec.auto_review.policy)
+        return sorted(docs) or None
+
+    @staticmethod
+    def _record_query(spec: ToolSpec, record: dict, review: dict) -> str:
+        """What to look up in the KB for a record: the failed checks plus the record's non-PII field values."""
+        parts = [f"{c['title']}: {c['detail']}" for c in review["checks"] if not c["passed"]]
+        for f in spec.stored_fields:
+            v = record.get(f.name)
+            if v in (None, "", False) or f.type == "datetime" or f.name in ("id", "created_at", "updated_at"):
+                continue
+            parts.append(f"{f.label} {v}")
+        return " ; ".join(parts)
+
+    def retrieve(self, spec: ToolSpec, query: str, cited: list[str] | None = None,
+                 k: int | None = None) -> list[Source]:
+        """Clauses cited by the tool's checks first (always in), then the best KB matches for the query."""
+        out: list[Source] = []
+        seen: set[str] = set()
+        for code in cited or []:
+            cl = self.kb.knowledge.clause(code)
+            if cl and cl.code not in seen:
+                seen.add(cl.code)
+                doc = self.kb.knowledge.docs[cl.doc]
+                out.append(Source(clause=cl.code, title=cl.title, doc=cl.doc, doc_title=doc.title, text=cl.text,
+                                  why="cited by check"))
+        for h in self.kb.search(query, k=(k or self.RETRIEVE_K) + len(seen), docs=self._policy_docs(spec)):
+            if h.chunk.clause in seen:
+                continue
+            out.append(self._hit_source(h))
+            if len(out) - len(seen) >= (k or self.RETRIEVE_K):
+                break
+        return out
+
+    # ---- features ---------------------------------------------------------------------------
     def summarize(self, spec: ToolSpec, user: User, rid: int) -> Summary:
         raw = self.engine.get_record(spec, user, rid, raw=True)
         review = self.engine.review(spec, raw)
         audit = self.engine.audit(spec, user, rid)[:8]
-        excerpts = []
-        for c in review["checks"]:
-            cl = self.clause(c["clause"])
-            if cl:
-                excerpts.append({"clause": cl.code, "title": cl.title, "text": cl.text})
+        safe = redact(spec, raw)
+        sources = self.retrieve(spec, self._record_query(spec, safe, review), [c["clause"] for c in review["checks"]])
         ctx = {
             "spec": {"title_field": spec.title_field, "entity": spec.entity},
-            "record": redact(spec, raw),
+            "record": safe,
             "review": review,
             "audit": [{"ts": a["ts"], "user_id": a["user_id"], "action": a["action"], "comment": a["comment"]} for a in audit],
-            "policy_excerpts": excerpts,
+            "policy_excerpts": [s.model_dump(exclude={"doc_title"}) for s in sources],
         }
-        return self.provider.summarize(ctx)
+        s = self.provider.summarize(ctx)
+        s.sources = sources
+        return s
+
+    def ask(self, spec: ToolSpec, user: User, question: str, rid: int | None) -> Answer:
+        """Policy Q&A grounded in the KB: retrieve, then answer from the retrieved clauses only."""
+        self.engine.require(spec, user, "read")
+        q = question.strip()
+        ctx: dict = {}
+        cited: list[str] = []
+        query = q
+        if rid is not None:
+            raw = self.engine.get_record(spec, user, rid, raw=True)
+            review = self.engine.review(spec, raw)
+            safe = redact(spec, raw)
+            cited = [c["clause"] for c in review["checks"] if not c["passed"]]
+            query = f"{q} ; {self._record_query(spec, safe, review)}"
+            ctx.update(record=safe, review=review)
+        sources = self.retrieve(spec, query, cited, k=5)
+        ctx["sources"] = [s.model_dump() for s in sources]
+        a = self.provider.answer(q, ctx)
+        self.engine._audit(spec, rid, user, "ai:ask", q[:200], None,
+                           {"cites": a.cites, "retrieved": [s.clause or s.title for s in sources], "source": a.source})
+        self.engine.conn.commit()
+        return a
 
     def query(self, spec: ToolSpec, user: User, question: str, view_id: str | None) -> dict:
         self.engine.require(spec, user, "read")

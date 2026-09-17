@@ -88,7 +88,7 @@ def seed(db_path: Path | str = DB_PATH, tools_dir: Path = TOOLS_DIR) -> None:
         ("payments.3ds2-challenge-flow", "payments-api", "Force 3DS2 challenge on high-risk", True, True, True, 100, "CR-2198", "Approved", "Amara Okafor", False),
         ("onboarding.selfie-liveness", "onboarding", "Liveness check during ID capture", True, True, False, 0, "CR-2240", "Pending", "Priya Nair", False),
         ("ledger.double-entry-v2", "ledger", "New ledger posting engine", True, False, False, 0, "", "None", "Lin Zhao", False),
-        ("web.new-merchant-dashboard", "web-app", "Redesigned merchant dashboard", True, True, True, 10, "", "None", "Amara Okafor", False),
+        ("web.new-merchant-dashboard", "web-app", "Redesigned merchant dashboard", True, True, True, 10, "", "None", "", False),
         ("payments.apple-pay", "payments-api", "Apple Pay acceptance", True, True, True, 100, "CR-1902", "Approved", "Lin Zhao", True),
         ("refunds.auto-approve-under-50", "refunds-svc", "Skip manual review for refunds < 50", True, True, False, 0, "CR-2244", "Pending", "Sofia Alvarez", False),
         ("onboarding.sanctions-v3", "onboarding", "New sanctions screening provider", True, False, False, 0, "", "None", "Marcus Chen", False),

@@ -212,6 +212,16 @@ td .link { color: var(--text); font-weight: 600; }
 .chk-detail { color: var(--muted); margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
 .clause-text { margin-top: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 8px; color: var(--text-2); line-height: 1.5; }
 .clause-text .src-doc { color: var(--muted); font-size: 11px; font-family: ui-monospace, monospace; margin-left: 6px; }
+.clause-text p { margin: 4px 0 0; font-size: 12px; }
+.kb-sources { border-top: 1px solid rgba(176,131,240,.2); margin-top: 8px; padding-top: 8px; font-size: 12px; }
+.kb-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.kb-chip { font: inherit; font-size: 11px; font-family: ui-monospace, monospace; color: var(--text-2); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; cursor: pointer; }
+.kb-chip:hover, .kb-chip.on { border-color: var(--purple); color: var(--text); }
+.kb-chip.cited { border-color: rgba(176,131,240,.6); color: var(--purple); }
+.ask-row { display: flex; gap: 6px; }
+.ask-row input { flex: 1; min-width: 0; }
+.ai-answer { margin-top: 8px; font-size: 12px; line-height: 1.5; color: var(--text); }
+.ai .err { color: var(--red); font-size: 12px; margin-top: 6px; }
 
 .ai-decision { background: rgba(176,131,240,.08); border: 1px solid rgba(176,131,240,.35); border-radius: 8px; padding: 10px 12px; }
 .ai-decision .ai-head { margin-bottom: 6px; }

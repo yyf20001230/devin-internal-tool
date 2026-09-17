@@ -6,6 +6,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 from server.ai import RulesProvider
+from server.kb import LexicalEmbedder
 from server.main import ROOT, build_app
 from server.seed import seed
 from server.spec import ToolSpec, load_directory, load_tools
@@ -17,7 +18,8 @@ TOOLS_DIR = ROOT / "tools"
 def client(tmp_path_factory):
     db = tmp_path_factory.mktemp("db") / "test.db"
     seed(db, TOOLS_DIR)
-    return TestClient(build_app(TOOLS_DIR, db, provider=RulesProvider()))  # tests never call an LLM
+    # tests never call an LLM or an embeddings API
+    return TestClient(build_app(TOOLS_DIR, db, provider=RulesProvider(), embedder=LexicalEmbedder()))
 
 
 def h(user: str) -> dict:
@@ -381,4 +383,66 @@ def test_ai_query_rejects_nonsense(client):
 
 def test_ai_endpoints_respect_tool_read_permission(client):
     r = client.post("/api/tools/kyc/ai/query", json={"question": "high risk"}, headers=h("lin"))
+    assert r.status_code == 403
+
+
+# ---- knowledge base index -----------------------------------------------------------------
+def test_kb_indexes_every_clause_and_reuses_cached_vectors(client):
+    st = client.get("/api/knowledge/status", headers=h("priya")).json()
+    docs = client.get("/api/knowledge", headers=h("priya")).json()
+    intros = sum(1 for d in docs if d["summary"])
+    assert st["backend"] == "lexical" and st["chunks"] == sum(d["clauses"] for d in docs) + intros
+    again = client.post("/api/knowledge/reindex", headers=h("priya")).json()
+    assert again["embedded"] == 0 and again["reused"] == st["chunks"]  # nothing changed -> nothing re-embedded
+
+
+def test_kb_search_finds_the_right_clause(client):
+    hits = client.get("/api/knowledge/search", params={"q": "proof of address utility bill"}, headers=h("priya")).json()["hits"]
+    assert hits[0]["chunk"]["clause"] == "KYC-3.2"
+    hits = client.get("/api/knowledge/search", params={"q": "chargeback dispute window refund", "doc": "refund_policy"},
+                      headers=h("sofia")).json()["hits"]
+    assert hits and all(x["chunk"]["doc"] == "refund_policy" for x in hits)
+
+
+def test_kb_search_requires_auth(client):
+    assert client.get("/api/knowledge/search", params={"q": "x"}).status_code == 401
+
+
+def test_ai_summary_sources_come_from_the_kb(client):
+    rows = client.get("/api/tools/kyc/records", params={"view": "open"}, headers=h("priya")).json()
+    s = client.post("/api/tools/kyc/ai/summary", json={"record_id": rows[0]["id"]}, headers=h("priya")).json()
+    whys = {x["why"] for x in s["sources"]}
+    assert "cited by check" in whys and "retrieved" in whys
+    assert all(x["doc"] == "kyc_review_policy" for x in s["sources"])  # retrieval scoped to the tool's policy
+    assert all(x["score"] is not None for x in s["sources"] if x["why"] == "retrieved")
+
+
+def test_ai_ask_answers_from_retrieved_clauses_and_is_audited(client):
+    rows = client.get("/api/tools/kyc/records", params={"view": "open"}, headers=h("marcus")).json()
+    rid = rows[0]["id"]
+    a = client.post("/api/tools/kyc/ai/ask", json={"question": "can an analyst approve this case?", "record_id": rid},
+                    headers=h("marcus")).json()
+    codes = [x["clause"] for x in a["sources"]]
+    assert "KYC-1.2" in codes and a["source"] == "rules" and a["answer"]
+    assert set(a["cites"]) <= set(codes)
+    audit = client.get("/api/tools/kyc/audit", params={"record_id": rid}, headers=h("marcus")).json()
+    assert audit[0]["action"] == "ai:ask" and "KYC-1.2" in audit[0]["after"]["retrieved"]
+
+
+def test_flag_policy_checks_cite_the_feature_flag_kb(client):
+    rows = client.get("/api/tools/flags/records", params={"view": "prod_no_cr"}, headers=h("lin")).json()
+    assert rows and all(r["policy_verdict"] == "Flagged" for r in rows)
+    review = client.get(f"/api/tools/flags/records/{rows[0]['id']}/review", headers=h("lin")).json()
+    failed = {c["clause"] for c in review["checks"] if not c["passed"]}
+    assert "FF-2.1" in failed
+    unowned = [r for r in client.get("/api/tools/flags/records", headers=h("lin")).json() if not r["owner"]]
+    review = client.get(f"/api/tools/flags/records/{unowned[0]['id']}/review", headers=h("lin")).json()
+    assert "FF-1.2" in {c["clause"] for c in review["checks"] if not c["passed"]}
+    hits = client.get("/api/knowledge/search", params={"q": "who may approve a change request", "doc": "feature_flag_policy"},
+                      headers=h("lin")).json()["hits"]
+    assert hits[0]["chunk"]["clause"] in ("FF-2.2", "FF-2.1")
+
+
+def test_ai_ask_respects_tool_read_permission(client):
+    r = client.post("/api/tools/refunds/ai/ask", json={"question": "what is the refund window?"}, headers=h("priya"))
     assert r.status_code == 403

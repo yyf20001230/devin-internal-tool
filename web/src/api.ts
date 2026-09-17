@@ -52,7 +52,10 @@ export interface KnowledgeSummary { id: string; title: string; summary: string; 
 export interface Clause { code: string; title: string; text: string; doc: string }
 export interface KnowledgeDoc { id: string; title: string; summary: string; body: string; clauses: Clause[] }
 export interface Me { user: User; roles: Record<string, string>; tools: ToolSummary[] }
-export interface Summary { headline: string; bullets: string[]; recommendation: string; source: string }
+export interface Source { clause: string | null; title: string; doc: string; doc_title: string; text: string; score: number | null; why: string }
+export interface Summary { headline: string; bullets: string[]; recommendation: string; source: string; sources: Source[] }
+export interface Answer { answer: string; cites: string[]; sources: Source[]; source: string }
+export interface KBStatus { backend: string; model: string; configured: string; chunks: number; docs: string[]; indexed_at: string | null; last_error: string | null }
 export interface QueryResult { filter: Filter; sort: string | null; explanation: string; source: string; rows: Rec[] }
 export interface AIStatus { provider: string; model: string | null; last_error: string | null }
 export type Rec = Record<string, unknown> & { id: number }
@@ -106,6 +109,9 @@ export const api = {
   knowledge: () => req<KnowledgeSummary[]>('/api/knowledge'),
   knowledgeDoc: (id: string) => req<KnowledgeDoc>(`/api/knowledge/${id}`),
   summary: (id: string, rid: number) => req<Summary>(`/api/tools/${id}/ai/summary`, { method: 'POST', body: JSON.stringify({ record_id: rid }) }),
+  ask: (id: string, question: string, rid: number | null) =>
+    req<Answer>(`/api/tools/${id}/ai/ask`, { method: 'POST', body: JSON.stringify({ question, record_id: rid }) }),
+  kbStatus: () => req<KBStatus>('/api/knowledge/status'),
   query: (id: string, question: string, view: string) =>
     req<QueryResult>(`/api/tools/${id}/ai/query`, { method: 'POST', body: JSON.stringify({ question, view }) }),
   aiStatus: () => req<AIStatus>('/api/ai'),

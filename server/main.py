@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from .ai import OPENAI_MODEL, AIService, Provider, make_provider
 from .engine import Engine, Forbidden, Invalid, NotFound
+from .kb import Embedder, KnowledgeBase, make_embedder
 from .knowledge import load_knowledge
 from .spec import ToolSpec, User, load_directory, load_tools
 
@@ -40,13 +41,20 @@ class QueryBody(BaseModel):
     view: str | None = None
 
 
+class AskBody(BaseModel):
+    question: str
+    record_id: int | None = None
+
+
 def build_app(tools_dir: Path = TOOLS_DIR, db_path: Path | str = DB_PATH,
-              knowledge_dir: Path = KNOWLEDGE_DIR, provider: Provider | None = None) -> FastAPI:
+              knowledge_dir: Path = KNOWLEDGE_DIR, provider: Provider | None = None,
+              embedder: Embedder | None = None) -> FastAPI:
     tools = load_tools(tools_dir)
     directory = load_directory(tools_dir)
     knowledge = load_knowledge(knowledge_dir)
     engine = Engine(db_path, tools)
-    ai = AIService(engine, provider or make_provider(), knowledge.clause)
+    kb = KnowledgeBase(engine.conn, knowledge, embedder or make_embedder())
+    ai = AIService(engine, provider or make_provider(), kb)
     for spec in tools.values():  # every check must cite a clause that exists in the knowledge base
         for c in spec.checks:
             if knowledge.clause(c.clause) is None:
@@ -106,11 +114,27 @@ def build_app(tools_dir: Path = TOOLS_DIR, db_path: Path | str = DB_PATH,
     @app.get("/api/knowledge")
     def knowledge_index(user: User = Depends(current_user)):
         return [{"id": d.id, "title": d.title, "summary": d.summary, "clauses": len(d.clauses)}
-                for d in knowledge.docs.values()]
+                for d in kb.knowledge.docs.values()]
+
+    @app.get("/api/knowledge/search")
+    def knowledge_search(q: str, user: User = Depends(current_user), k: int = 5, doc: str | None = None):
+        """Semantic search over the policy knowledge base (same index the AI features use)."""
+        if not q.strip():
+            raise HTTPException(400, "ask something")
+        return {"hits": kb.search(q, k=min(k, 20), docs=[doc] if doc else None), "index": kb.status()}
+
+    @app.get("/api/knowledge/status")
+    def knowledge_status(user: User = Depends(current_user)):
+        return kb.status()
+
+    @app.post("/api/knowledge/reindex")
+    def knowledge_reindex(user: User = Depends(current_user)):
+        """Re-read knowledge/*.md and embed anything that changed (policy edits land without a restart)."""
+        return kb.reload(load_knowledge(knowledge_dir))
 
     @app.get("/api/knowledge/{doc_id}")
     def knowledge_doc(doc_id: str, user: User = Depends(current_user)):
-        doc = knowledge.docs.get(doc_id)
+        doc = kb.knowledge.docs.get(doc_id)
         if doc is None:
             raise HTTPException(404, f"policy {doc_id}")
         return doc
@@ -179,14 +203,14 @@ def build_app(tools_dir: Path = TOOLS_DIR, db_path: Path | str = DB_PATH,
         report = engine.auto_review(spec, user, service_user(spec.auto_review.actor), view)
         for item in report["items"]:
             cite(item["checks"])
-        doc = knowledge.docs.get(spec.auto_review.policy)
+        doc = kb.knowledge.docs.get(spec.auto_review.policy)
         report["policy_title"] = doc.title if doc else spec.auto_review.policy
         return report
 
     def cite(checks: list[dict]) -> None:
         """Attach the knowledge-base clause (title, text, source doc) to each check result."""
         for c in checks:
-            clause = knowledge.clause(c["clause"])
+            clause = kb.knowledge.clause(c["clause"])
             c["clause_title"] = clause.title if clause else ""
             c["clause_text"] = clause.text if clause else ""
             c["policy"] = clause.doc if clause else None
@@ -201,10 +225,17 @@ def build_app(tools_dir: Path = TOOLS_DIR, db_path: Path | str = DB_PATH,
             raise HTTPException(400, "ask something")
         return ai.query(spec, user, body.question, body.view)
 
+    @app.post("/api/tools/{tool_id}/ai/ask")
+    def ai_ask(body: AskBody, spec: ToolSpec = Depends(tool), user: User = Depends(current_user)):
+        """Policy Q&A: retrieve the relevant clauses from the KB index, answer from them, cite them."""
+        if not body.question.strip():
+            raise HTTPException(400, "ask something")
+        return ai.ask(spec, user, body.question, body.record_id)
+
     @app.get("/api/ai")
     def ai_status(user: User = Depends(current_user)):
         return {"provider": ai.provider.name, "model": OPENAI_MODEL if ai.provider.name == "openai" else None,
-                "last_error": ai.provider.last_error}
+                "last_error": ai.provider.last_error, "kb": kb.status()}
 
     @app.get("/api/tools/{tool_id}/dashboard")
     def dashboard(spec: ToolSpec = Depends(tool), user: User = Depends(current_user)):

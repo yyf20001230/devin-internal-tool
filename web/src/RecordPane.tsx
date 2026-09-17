@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ActionSpec, AuditEntry, FieldSpec, Rec, Review, Summary, ToolSpec } from './api'
+import type { ActionSpec, Answer, AuditEntry, FieldSpec, Rec, Review, Source, Summary, ToolSpec } from './api'
 import { api, fmt } from './api'
 import { pillColour } from './Cell'
 import { Icon, actionIcon } from './Icon'
@@ -37,6 +37,71 @@ function Input({ f, v, onChange, disabled }: { f: FieldSpec; v: unknown; onChang
         onChange={e => onChange(e.target.value ? new Date(e.target.value).toISOString().slice(0, 19) + '+00:00' : '')} />
     default: return <input value={s} disabled={disabled} onChange={e => onChange(e.target.value)} />
   }
+}
+
+function Sources({ sources, cites }: { sources: Source[]; cites?: string[] }) {
+  const [open, setOpen] = useState<string | null>(null)
+  if (!sources.length) return null
+  return (
+    <div className="kb-sources">
+      <div className="sub">From the knowledge base</div>
+      <div className="kb-chips">
+        {sources.map(s => {
+          const key = s.clause ?? s.title
+          const cited = cites?.includes(key)
+          return (
+            <button key={key} className={`kb-chip${open === key ? ' on' : ''}${cited ? ' cited' : ''}`}
+              title={`${s.doc_title} · ${s.why}${s.score != null ? ` · similarity ${s.score.toFixed(2)}` : ''}`}
+              onClick={() => setOpen(open === key ? null : key)}>
+              {key}
+            </button>
+          )
+        })}
+      </div>
+      {sources.filter(s => (s.clause ?? s.title) === open).map(s => (
+        <div key={s.clause ?? s.title} className="clause-text">
+          <b>{s.clause ? `${s.clause} ${s.title}` : s.title}</b>
+          <div className="sub">{s.doc_title} · {s.why}{s.score != null ? ` · similarity ${s.score.toFixed(2)}` : ''}</div>
+          <p>{s.text}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function AskPolicy({ tool, record }: { tool: ToolSpec; record: Rec }) {
+  const [q, setQ] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [ans, setAns] = useState<Answer | null>(null)
+  const [err, setErr] = useState('')
+  useEffect(() => { setAns(null); setErr(''); setQ('') }, [record.id])
+
+  async function ask() {
+    if (!q.trim()) return
+    setBusy(true); setErr('')
+    try { setAns(await api.ask(tool.id, q, record.id)) } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+  }
+
+  return (
+    <section className="ai">
+      <div className="ai-head">
+        <Icon name="search" />
+        <span>Ask the policy</span>
+        {ans && <span className="src" title={ans.source === 'openai' ? 'Answered by the configured LLM from retrieved clauses' : 'Extractive answer from retrieved clauses (LLM unavailable)'}>{ans.source === 'openai' ? 'LLM' : 'rules'}</span>}
+      </div>
+      <form className="ask-row" onSubmit={e => { e.preventDefault(); void ask() }}>
+        <input value={q} placeholder="e.g. can I approve this without the missing document?" onChange={e => setQ(e.target.value)} disabled={busy} />
+        <button className="btn small secondary" type="submit" disabled={busy || !q.trim()}>{busy ? '…' : 'Ask'}</button>
+      </form>
+      {err && <div className="err">{err}</div>}
+      {ans && (
+        <>
+          <div className="ai-answer">{ans.answer}</div>
+          <Sources sources={ans.sources} cites={ans.cites} />
+        </>
+      )}
+    </section>
+  )
 }
 
 
@@ -162,10 +227,13 @@ export function RecordPane({ tool, record, actions, actionEnabled, onAction, onC
               <div className="ai-headline">{summary.headline}</div>
               <ul>{summary.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>
               <div className="ai-rec"><Icon name="arrowUpRight" />{summary.recommendation}</div>
+              <Sources sources={summary.sources} />
             </>
           )}
         </section>
       )}
+
+      {record && hasPolicy && <AskPolicy tool={tool} record={record} />}
 
       {record && hasPolicy && (
         <section className="policy">

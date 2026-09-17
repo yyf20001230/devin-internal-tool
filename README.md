@@ -59,10 +59,61 @@ platform code, all governance tests inherited.
   can undo an automated decision per record (**Reset AI decision**) or all at once
   (`POST /ai-reset`): the pre-review values are restored and the reset is audited as the human,
   never over a later human decision.
+- **Ask the policy** in every detail pane: *"can I approve this without the missing document?"*
+  → the question (plus the record's non-protected fields) is matched against the knowledge
+  base, the top clauses are handed to the model, and the answer cites them (`KYC-1.2`, …).
+  Clicking a citation shows the clause text, the source document and the similarity score.
+  Audited as `ai:ask` with the clauses retrieved and the ones the answer relied on.
+- **Knowledge base**: the AI never reads the Markdown files directly. At startup each
+  `knowledge/*.md` is split into one chunk per clause, embedded (OpenAI
+  `text-embedding-3-small`) and stored in SQLite (`kb_chunks`); summaries and answers retrieve
+  from that index (`server/kb.py`). Unchanged clauses are not re-embedded (content hash).
+  Without an API key or on quota errors the index runs on a local hashed-TF-IDF vector so
+  search still works offline. `GET /api/knowledge/status` shows backend, model and chunk count;
+  `GET /api/knowledge/search?q=…` searches it; `POST /api/knowledge/reindex` reloads the docs.
 - **Providers**: `OPENAI_API_KEY` present → OpenAI (`OPENAI_MODEL`, default `gpt-4o-mini`),
   strict-JSON, schema-validated, falls back automatically on error / quota. Absent → a
   deterministic rules provider, so the demo and tests never depend on a network call.
   Protected fields are dropped before anything leaves the process.
+
+## Maintaining the knowledge base (for ops, compliance and engineering)
+
+The AI in each board only knows what is in these files — if a rule is not written here it
+cannot cite it, clear on it or answer questions about it. When policy changes, change the file:
+
+| New information about… | Edit this file | Clause prefix | Used by |
+|---|---|---|---|
+| KYC / onboarding review, sanctions, documents, risk bands | `knowledge/kyc_review_policy.md` | `KYC-` | KYC Review Queue |
+| Refunds, approval limits, fraud holds, refund windows | `knowledge/refund_policy.md` | `RF-` | Refunds Dashboard |
+| Feature flags, change requests, rollouts, kill switch | `knowledge/feature_flag_policy.md` | `FF-` | Feature Flags |
+| Platform / design / audit conventions for *building* tools | `knowledge/platform_conventions.md` | `PLAT-` | Devin when scaffolding new tools |
+
+**How to write it so the AI can use it**
+
+1. One rule per clause, under a level-3 heading with a code: `### RF-2.4 Partial refunds`.
+   Codes are `PREFIX-section.number`; never reuse or renumber an existing code — add a new one
+   (`RF-2.4`, `RF-2.5`…) so old audit entries keep pointing at the right rule.
+2. Write the rule as a complete, standalone paragraph in plain language, with the concrete
+   thresholds, roles and time limits ("below 1,000", "finance", "60 days"). Each clause is
+   retrieved on its own, so it must make sense without the clauses around it.
+3. Say who may do what, and keep an explicit "What automation may do" clause per policy so
+   reviewers can see the boundary the automated checks are allowed to work within.
+4. Writing the clause is enough for the AI to *cite* it (summaries, Ask the policy). To have
+   it *enforced*, add a `checks:` entry in the tool's YAML that cites the code
+   (`clause: RF-2.4`, `when: {amount: {lt: 1000}}`) — that is what lets `devin-ai` clear or
+   escalate a record. The server refuses to start if a check cites a clause that does not
+   exist, so a typo cannot ship.
+5. Open a pull request. Policy is code: a compliance lead reviews the diff, CI runs the
+   governance tests (`python -m pytest -q`), and the change is traceable in git history.
+6. Once merged and deployed the server re-indexes on startup; on a running instance call
+   `POST /api/knowledge/reindex` (any signed-in user) to pick the change up immediately.
+   Only the clauses whose text changed are re-embedded.
+
+A new policy area (say, payouts) is a new file `knowledge/payout_policy.md` with its own
+prefix (`PO-`); the loader picks up every `.md` in the folder automatically, and a new tool
+references it with `auto_review: {policy: payout_policy}`. Don't put merchant, customer or
+identity data in these files — they are policy, they are sent to the embedding provider, and
+they are visible to every signed-in user.
 
 ## Run it
 
@@ -71,7 +122,7 @@ pip install -r requirements.txt
 python -m server.seed                                   # rebuild data.db with synthetic demo data
 npm --prefix web ci && npm --prefix web run build       # static UI
 uvicorn server.main:app --host 0.0.0.0 --port 8000      # UI + API on http://localhost:8000
-python -m pytest -q                                     # 43 governance / policy / AI tests
+python -m pytest -q                                     # 52 governance / policy / AI / KB tests
 ```
 
 Optional: copy `.env.example` to `.env` and set `OPENAI_API_KEY` for live LLM output and
@@ -99,7 +150,7 @@ decisions and cannot sign in.
 |---|---|---|
 | Skill / slash command | `.devin/skills/new-tool/SKILL.md` | "Start from template" |
 | Playbook | `.devin/playbooks/new-internal-tool.md` | The maker + ALM pipeline, as a checklist |
-| Knowledge | `knowledge/platform_conventions.md` (+ policy docs) | Environment strategy / CoE standards |
+| Knowledge | `knowledge/platform_conventions.md` (+ policy docs, indexed into the in-app KB) | Environment strategy / CoE standards |
 | Declarative environment | `environment.yaml` | Managed environment provisioning |
 | Secrets store | `.env.example` (names), `os.environ` (reads) | Connection references / Key Vault |
 

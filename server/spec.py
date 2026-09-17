@@ -13,7 +13,20 @@ import yaml
 from pydantic import BaseModel, Field, model_validator
 
 FieldType = Literal["text", "multiline", "number", "money", "boolean", "choice", "date", "datetime", "percent"]
-Filter = dict[str, object]  # {field: value | [values] | {op: value}}
+Filter = dict[str, object]  # {field: value | [values] | {op: value}} | {any: [Filter, ...]}
+
+
+def filter_fields(flt: Filter) -> list[str]:
+    """Every field a filter reads, descending into `any` branches."""
+    out: list[str] = []
+    for k, v in flt.items():
+        if k == "any" and isinstance(v, list):
+            for sub in v:
+                out.extend(filter_fields(sub))
+        elif k not in out:
+            out.append(k)
+    return out
+
 
 VERDICT_FIELD = "policy_verdict"
 VERDICTS = ("Cleared", "Needs review", "Flagged")
@@ -141,7 +154,7 @@ class ToolSpec(BaseModel):
                 if f and f not in names:
                     raise ValueError(f"tile '{t.title}' references unknown field '{f}'")
         for c in self.checks:
-            for f in c.when:
+            for f in filter_fields(c.when):
                 if f not in names:
                     raise ValueError(f"check '{c.id}' references unknown field '{f}'")
         if self.auto_review:

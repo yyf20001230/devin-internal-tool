@@ -74,6 +74,34 @@ actions:
     destructive: true
     webhook: https://hooks.internal/flag-store/sync
 
+# Automated policy checks. Each cites a clause in knowledge/feature_flag_policy.md.
+checks:
+  - id: prod_cr
+    clause: FF-2.1
+    title: PROD only under an approved change request
+    when: {any: [{prod: false}, {cr_status: Approved}]}
+    on_fail: flag
+    pass_text: PROD is off, or the change request is approved.
+    fail_text: Flag is on in PROD without an approved change request.
+  - id: owner
+    clause: FF-1.2
+    title: Flag has an owner
+    when: {owner: {ne: ""}}
+    on_fail: flag
+    pass_text: A named engineer owns this flag.
+    fail_text: No owner - unowned flags may not be enabled in PROD.
+  - id: stale
+    clause: FF-4.1
+    title: Not stale
+    when: {stale: false}
+    pass_text: Flag is within its lifecycle.
+    fail_text: At 100% PROD for over 30 days - schedule removal.
+
+# FF-5.1: automation may flag but never enables a flag or approves a CR, so no clear/flag actions.
+auto_review:
+  policy: feature_flag_policy
+  scope: {prod: true}
+
 dashboard:
   - {type: kpi, title: Flags on in PROD, filter: {prod: true}}
   - {type: kpi, title: PROD on without approved CR, filter: {prod: true, cr_status: [None, Pending, Rejected]}}

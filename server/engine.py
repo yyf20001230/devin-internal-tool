@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .spec import VERDICT_FIELD, Filter, ToolSpec, User
+from .spec import VERDICT_FIELD, Filter, ToolSpec, User, filter_fields
 
 SQL_TYPES = {
     "text": "TEXT", "multiline": "TEXT", "choice": "TEXT", "date": "TEXT", "datetime": "TEXT",
@@ -64,9 +64,12 @@ def _resolve_time(value: object) -> object:
 
 
 def compile_filter(flt: Filter, params: list) -> str:
-    """Filter -> SQL WHERE fragment. {f: v}, {f: [v..]}, {f: {lt|lte|gt|gte|ne|contains: v}}"""
+    """Filter -> SQL WHERE fragment. {f: v}, {f: [v..]}, {f: {lt|lte|gt|gte|ne|contains: v}}, {any: [filter..]}"""
     clauses = []
     for field, cond in flt.items():
+        if field == "any" and isinstance(cond, list):
+            clauses.append("(" + " OR ".join(f"({compile_filter(sub, params)})" for sub in cond) + ")")
+            continue
         if not re.fullmatch(r"[a-z_][a-z0-9_]*", field):
             raise Invalid(f"bad field name {field!r}")
         if isinstance(cond, list):
@@ -92,6 +95,10 @@ def compile_filter(flt: Filter, params: list) -> str:
 def matches(flt: Filter, record: dict) -> bool:
     """In-memory equivalent of compile_filter, used for action guards."""
     for field, cond in flt.items():
+        if field == "any" and isinstance(cond, list):
+            if not any(matches(sub, record) for sub in cond):
+                return False
+            continue
         v = record.get(field)
         if isinstance(cond, list):
             if v not in cond:
@@ -102,7 +109,7 @@ def matches(flt: Filter, record: dict) -> bool:
                 ok = {
                     "lt": lambda: v is not None and v < x, "lte": lambda: v is not None and v <= x,
                     "gt": lambda: v is not None and v > x, "gte": lambda: v is not None and v >= x,
-                    "ne": lambda: v != x, "eq": lambda: v == x,
+                    "ne": lambda: v is not None and v != x, "eq": lambda: v == x,  # NULL != x is unknown, as in SQL
                     "contains": lambda: isinstance(v, str) and str(x) in v,
                 }[op]()
                 if not ok:
@@ -359,7 +366,7 @@ class Engine:
                             "outcome": "pass" if ok else c.on_fail,
                             "detail": c.pass_text if ok else c.fail_text,
                             "rule": c.when,
-                            "evidence": {f: shown.get(f) for f in c.when}})
+                            "evidence": {f: shown.get(f) for f in filter_fields(c.when)}})
             if not ok:
                 verdict = "Flagged" if c.on_fail == "flag" or verdict == "Flagged" else "Needs review"
         return {"verdict": verdict, "checks": results}
