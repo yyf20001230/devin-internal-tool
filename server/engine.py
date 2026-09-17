@@ -7,6 +7,8 @@ import json
 import os
 import re
 import sqlite3
+import threading
+from collections.abc import Iterator, Sequence
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -122,11 +124,53 @@ def matches(flt: Filter, record: dict) -> bool:
     return True
 
 
+class Rows:
+    """Fully materialised query result; mimics the bits of sqlite3.Cursor the engine uses."""
+
+    def __init__(self, rows: list[sqlite3.Row], lastrowid: int | None, rowcount: int):
+        self._rows = rows
+        self.lastrowid = lastrowid
+        self.rowcount = rowcount
+
+    def fetchone(self) -> sqlite3.Row | None:
+        return self._rows[0] if self._rows else None
+
+    def fetchall(self) -> list[sqlite3.Row]:
+        return list(self._rows)
+
+    def __iter__(self) -> Iterator[sqlite3.Row]:
+        return iter(self._rows)
+
+
+class DB:
+    """One SQLite connection shared by all request threads, with every statement executed and
+    fetched under a lock. A bare connection with check_same_thread=False is not safe to step
+    from several threads at once (sqlite3.InterfaceError: bad parameter or other API misuse)."""
+
+    def __init__(self, db_path: Path | str):
+        self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
+        self._lock = threading.RLock()
+
+    def execute(self, sql: str, params: Sequence[object] = ()) -> Rows:
+        with self._lock:
+            cur = self._conn.execute(sql, tuple(params))
+            rows = cur.fetchall() if cur.description else []
+            return Rows(rows, cur.lastrowid, cur.rowcount)
+
+    def commit(self) -> None:
+        with self._lock:
+            self._conn.commit()
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
+
+
 class Engine:
     def __init__(self, db_path: Path | str, tools: dict[str, ToolSpec]):
         self.tools = tools
-        self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
+        self.conn = DB(db_path)
         self.conn.execute(
             """CREATE TABLE IF NOT EXISTS audit_log (
                  id INTEGER PRIMARY KEY, ts TEXT, tool TEXT, record_id INTEGER, user_id TEXT,

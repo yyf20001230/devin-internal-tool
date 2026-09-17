@@ -17,7 +17,6 @@ import json
 import math
 import os
 import re
-import sqlite3
 import time
 from collections import Counter
 from datetime import datetime, timezone
@@ -26,6 +25,7 @@ from typing import Protocol
 import httpx
 from pydantic import BaseModel
 
+from .engine import DB
 from .knowledge import Knowledge
 
 EMBEDDING_MODEL = os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
@@ -134,7 +134,7 @@ def _cos(a: list[float], b: list[float]) -> float:
 class KnowledgeBase:
     """Vector index over the policy clauses, persisted in the platform's SQLite database."""
 
-    def __init__(self, conn: sqlite3.Connection, knowledge: Knowledge, embedder: Embedder):
+    def __init__(self, conn: DB, knowledge: Knowledge, embedder: Embedder):
         self.conn = conn
         self.knowledge = knowledge
         self.embedder = embedder

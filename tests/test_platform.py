@@ -1,4 +1,5 @@
 """Governance tests that run against EVERY tool YAML, so a new tool inherits them for free."""
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -446,3 +447,20 @@ def test_flag_policy_checks_cite_the_feature_flag_kb(client):
 def test_ai_ask_respects_tool_read_permission(client):
     r = client.post("/api/tools/refunds/ai/ask", json={"question": "what is the refund window?"}, headers=h("priya"))
     assert r.status_code == 403
+
+
+def test_concurrent_requests_share_one_sqlite_connection_safely(client):
+    """Opening a record fires several API calls at once; they must not trip sqlite's
+    single-connection threading limits (InterfaceError: bad parameter or other API misuse)."""
+    rows = client.get("/api/tools/refunds/records", headers=h("sofia")).json()[:5]
+    calls = []
+    for r in rows:
+        calls += [
+            lambda rid=r["id"]: client.get(f"/api/tools/refunds/records/{rid}", headers=h("sofia")),
+            lambda rid=r["id"]: client.get(f"/api/tools/refunds/records/{rid}/review", headers=h("sofia")),
+            lambda rid=r["id"]: client.post("/api/tools/refunds/ai/summary", json={"record_id": rid}, headers=h("sofia")),
+            lambda: client.get("/api/tools/refunds/dashboard", headers=h("sofia")),
+        ]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda f: f(), calls * 3))
+    assert all(r.status_code == 200 for r in results), [r.status_code for r in results if r.status_code != 200]
