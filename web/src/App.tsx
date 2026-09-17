@@ -193,8 +193,6 @@ export default function App() {
     } catch (e) { toast((e as Error).message, true) }
   }
 
-  const quickActions = useMemo(() => tool ? tool.actions.filter(a => a.allowed) : [], [tool])
-
   // Keyboard: ↑/↓ move through the queue, Enter opens the record, Esc closes the pane.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -383,24 +381,11 @@ export default function App() {
                         </th>
                       )
                     })}
-                    {quickActions.length > 0 && <th className="row-acts" title="Quick actions — hover a row, or open it for the full record" />}
                   </tr></thead>
                   <tbody>
                     {shown.map(r => (
                       <tr key={r.id} className={`row ${sel?.id === r.id ? 'sel' : ''}`} onClick={() => { setSel(r); setPaneOpen(true) }}>
                         {columns.map(f => <td key={f.name} className={isNumeric(f) ? 'num' : ''}><Cell f={f} r={r} isTitle={f.name === tool?.title_field} /></td>)}
-                        {quickActions.length > 0 && (
-                          <td className="row-acts" onClick={e => e.stopPropagation()}>
-                            <span className="acts">
-                              {quickActions.filter(a => actionEnabled(a, r)).map(a => (
-                                <button key={a.id} className={`iconbtn ${a.destructive ? 'danger' : /approve|resolve|clear|resume|pay|enable/.test(a.id) ? 'ok' : ''}`}
-                                  title={`${a.label}${a.requires_comment ? ' (comment required)' : ''}`} onClick={() => { setSel(r); startAction(a, r) }}>
-                                  <Icon name={actionIcon(a.id, a.icon, a.destructive)} size={14} />
-                                </button>
-                              ))}
-                            </span>
-                          </td>
-                        )}
                       </tr>
                     ))}
                   </tbody>

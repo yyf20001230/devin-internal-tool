@@ -35,28 +35,28 @@ views:
   - id: open
     name: Open cases
     filter: {status: [Pending, In review, Documents requested, Escalated]}
-    columns: [case_id, applicant, country, risk, risk_score, sanctions_hit, docs_complete, policy_verdict, status, assignee, sla_due]
+    columns: [case_id, applicant, risk, risk_score, policy_verdict, status, sla_due]
     sort: risk_score desc
   - id: mine
     name: Assigned to me
     mine: true
     filter: {status: [Pending, In review, Documents requested, Escalated]}
-    columns: [case_id, applicant, risk, risk_score, sanctions_hit, docs_complete, policy_verdict, status, sla_due]
+    columns: [case_id, applicant, risk, risk_score, policy_verdict, status, sla_due]
     sort: risk_score desc
   - id: breach
     name: Breaching SLA in 4h
     filter: {status: [Pending, In review, Documents requested, Escalated], sla_due: {lt: now+4h}}
-    columns: [case_id, applicant, risk, risk_score, sanctions_hit, policy_verdict, status, assignee, sla_due]
+    columns: [case_id, applicant, risk, risk_score, policy_verdict, status, sla_due]
     sort: sla_due asc
   - id: high
     name: High risk & sanctions hits
     filter: {risk: High}
-    columns: [case_id, applicant, country, risk_score, sanctions_hit, policy_verdict, status, assignee, sla_due]
+    columns: [case_id, applicant, country, risk_score, sanctions_hit, policy_verdict, status, sla_due]
     sort: risk_score desc
   - id: closed
     name: Decided
     filter: {status: [Approved, Rejected]}
-    columns: [case_id, applicant, country, risk, risk_score, status, assignee, opened_at]
+    columns: [case_id, applicant, risk, risk_score, status, assignee, opened_at]
 
 actions:
   - id: start_review

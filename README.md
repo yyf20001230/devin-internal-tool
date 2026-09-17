@@ -147,9 +147,10 @@ Optional: copy `.env.example` to `.env` and set `OPENAI_API_KEY` for live LLM ou
 `WEBHOOK_SIGNING_SECRET` for signed webhook payloads. In Devin Cloud these come from the
 Secrets store; nothing in the repo ever holds a value.
 
-**Working a queue fast:** hover a row for one-click actions (approve, reject, escalate, hold,
-enable, kill switch…) without opening it; ↑/↓ move through the queue, Enter opens the record,
-Esc closes it. Acting on an open record advances to the next one in the queue.
+**Working a queue fast:** rows show only what you need to triage; open a record for the full
+detail and its actions (approve, reject, escalate, hold, enable, kill switch…) at the top of the
+pane. ↑/↓ move through the queue, Enter opens the record, Esc closes it. Acting on an open
+record advances to the next one in the queue.
 
 Sign in as a demo identity — each sees only the boards its roles grant:
 

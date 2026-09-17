@@ -32,32 +32,32 @@ views:
   - id: awaiting
     name: Awaiting approval
     filter: {status: Awaiting approval}
-    columns: [refund_id, merchant, amount, currency, rail, reason, risk, prior_refunds_90d, policy_verdict, reviewer, requested_at]
+    columns: [refund_id, merchant, amount, reason, risk, policy_verdict, requested_at]
     sort: amount desc
   - id: large
     name: Over 1,000 (finance approval)
     filter: {status: Awaiting approval, amount: {gte: 1000}}
-    columns: [refund_id, merchant, amount, currency, rail, reason, risk, policy_verdict, bank_account, requested_at]
+    columns: [refund_id, merchant, amount, reason, risk, policy_verdict, requested_at]
     sort: amount desc
   - id: hold
     name: On hold
     filter: {status: On hold}
-    columns: [refund_id, merchant, amount, currency, reason, risk, policy_verdict, reviewer, requested_at]
+    columns: [refund_id, merchant, amount, reason, risk, policy_verdict, requested_at]
     sort: requested_at asc
   - id: approved
     name: Approved - ready for payout
     filter: {status: Approved}
-    columns: [refund_id, merchant, amount, currency, rail, reason, reviewer, requested_at]
+    columns: [refund_id, merchant, amount, reason, reviewer, requested_at]
     sort: amount desc
   - id: fraud
     name: Fraud reversals
     filter: {reason: Fraud reversal}
-    columns: [refund_id, merchant, amount, currency, rail, risk, status, requested_at]
+    columns: [refund_id, merchant, amount, risk, status, requested_at]
     sort: requested_at desc
   - id: all
     name: All refunds (30 days)
     filter: {requested_at: {gte: now-30d}}
-    columns: [refund_id, merchant, amount, currency, rail, reason, status, reviewer, requested_at]
+    columns: [refund_id, merchant, amount, reason, status, requested_at]
     sort: requested_at desc
 
 actions:

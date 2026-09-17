@@ -21,7 +21,7 @@ const VERDICT_ICON: Record<string, { icon: string; cls: string }> = {
 function Choice({ f, v }: { f: FieldSpec; v: string }) {
   if (f.name === 'policy_verdict') {
     const m = VERDICT_ICON[v]
-    return m ? <span className={`verdict ${m.cls}`} title={`Policy check: ${v}`}><Icon name={m.icon} size={13} /></span> : <>{v}</>
+    return m ? <span className={`verdict ${m.cls}`} title={`Policy check: ${v}`}><Icon name={m.icon} size={13} />{v}</span> : <>{v}</>
   }
   const colour = STATUS_COLOURS[v] ?? ''
   if (PILL_FIELDS.has(f.name)) return <span className={`pill ${colour}`}>{v}</span>

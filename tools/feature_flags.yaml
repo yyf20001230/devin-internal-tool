@@ -25,16 +25,16 @@ views:
   - id: all
     name: All flags
     filter: {}
-    columns: [key, service, dev, uat, prod, rollout, change_request, cr_status, owner, last_changed]
+    columns: [key, service, uat, prod, rollout, cr_status, owner]
     sort: key asc
   - id: prod_no_cr
     name: PROD on without approved CR
     filter: {prod: true, cr_status: [None, Pending, Rejected]}
-    columns: [key, service, prod, rollout, change_request, cr_status, owner, last_changed]
+    columns: [key, service, prod, rollout, cr_status, owner]
   - id: pending_cr
     name: Awaiting release approval
     filter: {cr_status: Pending}
-    columns: [key, service, uat, prod, rollout, change_request, owner, last_changed]
+    columns: [key, service, uat, prod, rollout, change_request, owner]
   - id: stale
     name: Stale (100% for > 30d)
     filter: {stale: true}
