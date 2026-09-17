@@ -117,11 +117,17 @@ they are visible to every signed-in user.
 
 ## Run it locally
 
-Needs Python 3.10+ and Node 18+.
+**Prerequisites: Python 3.10+ and Node 18+.** macOS ships Python 3.9 with the Xcode
+command-line tools, which is too old, and has no Node — install both first:
+
+```bash
+brew install python@3.12 node        # macOS (https://brew.sh); Linux: apt install python3.12 python3.12-venv nodejs npm
+python3.12 --version && node --version
+```
 
 ```bash
 git clone https://github.com/yyf20001230/devin-internal-tool && cd devin-internal-tool
-python3 -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
+python3.12 -m venv .venv && source .venv/bin/activate   # Windows: py -3.12 -m venv .venv && .venv\Scripts\activate
 pip install -r requirements.txt
 npm --prefix web ci && npm --prefix web run build       # static UI → web/dist
 export OPENAI_API_KEY=sk-...                            # optional: live LLM + OpenAI embeddings
