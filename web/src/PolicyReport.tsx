@@ -18,6 +18,7 @@ function fmt(v: unknown): string {
 
 function rule(r: CheckResult['rule']): string {
   return Object.entries(r).map(([f, cond]) => {
+    if (f === 'any' && Array.isArray(cond)) return cond.map(sub => `(${rule(sub as CheckResult['rule'])})`).join(' or ')
     if (Array.isArray(cond)) return `${f} in [${cond.join(', ')}]`
     if (cond && typeof cond === 'object') return Object.entries(cond as Record<string, unknown>).map(([op, x]) => `${f} ${op} ${fmt(x)}`).join(' and ')
     return `${f} = ${fmt(cond)}`
