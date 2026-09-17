@@ -41,7 +41,8 @@ views:
     columns: [key, service, prod, rollout, owner, last_changed]
 
 # Engineers toggle environments directly; FF-2.1 is enforced by the policy check (flag + audit),
-# not by blocking the toggle. Change requests stay a release-manager approval.
+# not by blocking the toggle. Change requests are raised in the change-management system (cr_status
+# arrives as Pending); approving / rejecting them here stays a release-manager decision.
 actions:
   - id: enable_uat
     label: Enable in UAT
@@ -68,13 +69,6 @@ actions:
     requires_comment: true
     destructive: true
     webhook: https://hooks.internal/flag-store/sync
-  - id: request_release
-    label: Request PROD release
-    roles: [engineer, release_manager]
-    only_when: {cr_status: [None, Rejected]}
-    set: {cr_status: Pending}
-    requires_comment: true
-    webhook: https://hooks.internal/change-management/create-cr
   - id: approve_cr
     decision: approve
     label: Approve change request

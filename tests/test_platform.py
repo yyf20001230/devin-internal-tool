@@ -164,15 +164,17 @@ def test_webhook_action_logs_integration(client):
     assert log[0]["webhook"].endswith("/flag-store/sync") and log[0]["payload"]["title"] == flag["key"]
     review = client.get(f"/api/tools/flags/records/{rid}/review", headers=h("lin")).json()
     assert review["verdict"] == "Flagged" and any(c["clause"] == "FF-2.1" and not c["passed"] for c in review["checks"])
-    # CR approval stays a release-manager decision; engineer cannot approve their own
-    assert client.post("/api/tools/flags/actions/request_release", json={"record_id": rid, "comment": "ship it"}, headers=h("lin")).json()["cr_status"] == "Pending"
-    assert client.post("/api/tools/flags/actions/approve_cr", json={"record_id": rid}, headers=h("lin")).status_code == 403
-    assert client.post("/api/tools/flags/actions/approve_cr", json={"record_id": rid}, headers=h("amara")).json()["cr_status"] == "Approved"
-    review = client.get(f"/api/tools/flags/records/{rid}/review", headers=h("lin")).json()
-    assert all(c["passed"] for c in review["checks"] if c["clause"] == "FF-2.1")
     # kill switch is open to engineers too, but needs a comment
     assert client.post("/api/tools/flags/actions/kill_switch", json={"record_id": rid}, headers=h("lin")).status_code == 400
     assert client.post("/api/tools/flags/actions/kill_switch", json={"record_id": rid, "comment": "rollback"}, headers=h("lin")).json()["prod"] == 0
+    # CRs are raised outside this tool (no request action); approving one here stays a release-manager decision
+    assert "request_release" not in {a["id"] for a in client.get("/api/tools/flags", headers=h("lin")).json()["actions"]}
+    pending = next(r for r in client.get("/api/tools/flags/records?view=all", headers=h("lin")).json() if r["cr_status"] == "Pending")
+    assert client.post("/api/tools/flags/actions/approve_cr", json={"record_id": pending["id"]}, headers=h("lin")).status_code == 403
+    assert client.post("/api/tools/flags/actions/approve_cr", json={"record_id": pending["id"]}, headers=h("amara")).json()["cr_status"] == "Approved"
+    assert client.post("/api/tools/flags/actions/enable_prod", json={"record_id": pending["id"]}, headers=h("lin")).json()["prod"] == 1
+    review = client.get(f"/api/tools/flags/records/{pending['id']}/review", headers=h("lin")).json()
+    assert all(c["passed"] for c in review["checks"] if c["clause"] == "FF-2.1")
 
 
 def test_webhook_payloads_are_signed_with_env_secret_only(client, monkeypatch):
