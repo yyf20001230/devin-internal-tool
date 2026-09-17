@@ -54,10 +54,20 @@ actions:
     requires_comment: true
     webhook: https://hooks.internal/change-management/create-cr
   - id: approve_cr
+    decision: approve
     label: Approve change request
     roles: [release_manager]
     only_when: {cr_status: Pending}
     set: {cr_status: Approved}
+  - id: reject_cr
+    decision: reject
+    label: Reject change request
+    icon: x
+    roles: [release_manager]
+    only_when: {cr_status: Pending}
+    set: {cr_status: Rejected}
+    requires_comment: true
+    destructive: true
   - id: enable_prod
     label: Enable in PROD
     roles: [release_manager]

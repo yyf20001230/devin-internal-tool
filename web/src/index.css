@@ -195,7 +195,15 @@ td .link { color: var(--text); font-weight: 600; }
 .pane-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 .pane h3 { margin: 0 0 4px; font-size: 15px; }
 .pane .sub { color: var(--muted); font-size: 12px; margin-bottom: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.pane-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0 12px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.pane-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 4px 0 14px; }
+.pane-tabs .view { padding: 7px 10px; display: inline-flex; align-items: center; gap: 6px; }
+.pane-tabs .dotted .dot { width: 6px; height: 6px; }
+.decisions { padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+.decision-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.decision-row .btn { flex: 1 1 auto; justify-content: center; padding: 8px 8px; font-size: 12.5px; }
+.btn.approve { background: rgba(63,185,80,.14); color: var(--green); border-color: rgba(63,185,80,.5); }
+.btn.approve:hover:not(:disabled) { background: rgba(63,185,80,.26); filter: none; }
+.pane-actions { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; }
 .pane-actions .btn { padding: 5px 10px; font-size: 12px; }
 .pane section { margin-bottom: 14px; }
 .ai-head { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; margin-bottom: 8px; }

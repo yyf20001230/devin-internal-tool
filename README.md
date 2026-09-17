@@ -148,9 +148,12 @@ Optional: copy `.env.example` to `.env` and set `OPENAI_API_KEY` for live LLM ou
 Secrets store; nothing in the repo ever holds a value.
 
 **Working a queue fast:** rows show only what you need to triage; open a record for the full
-detail and its actions (approve, reject, escalate, hold, enable, kill switch…) at the top of the
-pane. ↑/↓ move through the queue, Enter opens the record, Esc closes it. Acting on an open
-record advances to the next one in the queue.
+detail in a three-tab pane: **Summary** (AI case summary + Approve / Reject / Request more info,
+plus any secondary actions such as hold or kill switch), **Policy check** (the clause checks and
+the Ask-the-policy box) and **Details** (every field, edit, audit trail). Which action fills each
+decision slot comes from `decision: approve|reject|info` on the tool's YAML actions. ↑/↓ move
+through the queue, Enter opens the record, Esc closes it. Acting on an open record advances to
+the next one in the queue.
 
 Sign in as a demo identity — each sees only the boards its roles grant:
 

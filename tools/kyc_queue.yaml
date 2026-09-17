@@ -66,6 +66,7 @@ actions:
     only_when: {status: [Pending, Documents requested]}
     set: {status: In review}
   - id: approve
+    decision: approve
     label: Approve
     icon: check
     roles: [compliance_lead]
@@ -73,6 +74,7 @@ actions:
     set: {status: Approved}
     confirm: Approve this applicant? This opens their account.
   - id: reject
+    decision: reject
     label: Reject
     icon: x
     roles: [compliance_lead]
@@ -88,7 +90,8 @@ actions:
     set: {status: Escalated, risk: High}
     requires_comment: true
   - id: request_docs
-    label: Request documents
+    decision: info
+    label: Request more info
     icon: file
     roles: [analyst, compliance_lead]
     only_when: {status: [Pending, In review, Escalated]}

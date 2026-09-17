@@ -105,8 +105,49 @@ function AskPolicy({ tool, record }: { tool: ToolSpec; record: Rec }) {
 }
 
 
+type Tab = 'summary' | 'policy' | 'details'
+const DECISIONS: { kind: NonNullable<ActionSpec['decision']>; cls: string }[] = [
+  { kind: 'approve', cls: 'approve' }, { kind: 'reject', cls: 'danger' }, { kind: 'info', cls: 'secondary' },
+]
+
+function Decisions({ actions, record, actionEnabled, onAction }: { actions: ActionSpec[]; record: Rec; actionEnabled: (a: ActionSpec, r: Rec) => boolean; onAction: (a: ActionSpec, r: Rec) => void }) {
+  const slots = DECISIONS.map(d => {
+    const all = actions.filter(a => a.decision === d.kind)
+    if (!all.length) return null
+    const a = all.find(x => actionEnabled(x, record)) ?? all.find(x => x.allowed) ?? all[0]
+    const enabled = actionEnabled(a, record)
+    const why = enabled ? '' : !a.allowed ? `Requires role: ${a.roles.join(' / ')}` : 'Not available in the current state'
+    return { ...d, a, enabled, why }
+  }).filter((s): s is NonNullable<typeof s> => s !== null)
+  const others = actions.filter(a => !a.decision && a.allowed && actionEnabled(a, record))
+  if (!slots.length && !others.length) return <div className="sub">No actions available in the current state.</div>
+  return (
+    <div className="decisions">
+      {slots.length > 0 && (
+        <div className="decision-row">
+          {slots.map(s => (
+            <button key={s.kind} className={`btn ${s.cls}`} disabled={!s.enabled} title={s.why || s.a.label} onClick={() => onAction(s.a, record)}>
+              <Icon name={actionIcon(s.a.id, s.a.icon, s.a.destructive)} />{s.a.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {others.length > 0 && (
+        <div className="pane-actions">
+          {others.map(a => (
+            <button key={a.id} className={`btn small ${a.destructive ? 'danger' : 'secondary'}`} onClick={() => onAction(a, record)}>
+              <Icon name={actionIcon(a.id, a.icon, a.destructive)} />{a.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function RecordPane({ tool, record, actions, actionEnabled, onAction, onClose, onSaved, toast }: Props) {
   const [values, setValues] = useState<Record<string, unknown>>({})
+  const [tab, setTab] = useState<Tab>('summary')
   const [audit, setAudit] = useState<AuditEntry[]>([])
   const [review, setReview] = useState<Review | null>(null)
   const [summary, setSummary] = useState<Summary | null>(null)
@@ -119,6 +160,7 @@ export function RecordPane({ tool, record, actions, actionEnabled, onAction, onC
 
   useEffect(() => {
     setErr(''); setReview(null); setSummary(null)
+    if (!hasPolicy) setTab(t => (t === 'policy' ? 'summary' : t))
     if (record) {
       setValues({ ...record }); setShowForm(false)
       api.audit(tool.id, record.id).then(setAudit).catch(() => setAudit([]))
@@ -159,8 +201,6 @@ export function RecordPane({ tool, record, actions, actionEnabled, onAction, onC
 
   const title = record ? String(record[tool.title_field]) : `New ${tool.entity.replace('_', ' ')}`
   const status = record && typeof record.status === 'string' ? record.status : null
-  const usable = record ? actions.filter(a => a.allowed && actionEnabled(a, record)) : []
-  const blocked = record ? actions.filter(a => a.allowed && !actionEnabled(a, record)) : []
   const keyFields = tool.fields.filter(f => !f.computed && f.name !== tool.title_field && f.name !== 'status' && !['created_at', 'updated_at'].includes(f.name))
 
   return (
@@ -177,18 +217,24 @@ export function RecordPane({ tool, record, actions, actionEnabled, onAction, onC
         <button className="iconbtn" onClick={onClose} title="Close"><Icon name="x" /></button>
       </div>
 
-      {record && actions.length > 0 && (
-        <div className="pane-actions">
-          {usable.map(a => (
-            <button key={a.id} className={`btn ${a.destructive ? 'danger' : 'secondary'}`} onClick={() => onAction(a, record)}>
-              <Icon name={actionIcon(a.id, a.icon, a.destructive)} />{a.label}
-            </button>
-          ))}
-          {usable.length === 0 && <div className="sub">No actions available in the current state{blocked.length ? ` (${blocked.map(b => b.label).join(', ')} need a different status)` : ''}.</div>}
+      {record && (
+        <div className="pane-tabs">
+          {([['summary', 'Summary'], ['policy', 'Policy check'], ['details', 'Details']] as [Tab, string][])
+            .filter(([id]) => id !== 'policy' || hasPolicy)
+            .map(([id, label]) => (
+              <button key={id} className={`view ${tab === id ? 'active' : ''}`} onClick={() => setTab(id)}>
+                {label}
+                {id === 'policy' && review && <span className={`dotted ${pillColour(review.verdict)}`}><span className="dot" /></span>}
+              </button>
+            ))}
         </div>
       )}
 
-      {record && review?.ai_decision && (
+      {record && tab === 'summary' && actions.length > 0 && (
+        <Decisions actions={actions} record={record} actionEnabled={actionEnabled} onAction={onAction} />
+      )}
+
+      {record && tab === 'summary' && review?.ai_decision && (
         <section className="ai-decision">
           <div className="ai-head">
             <Icon name="sparkle" />
@@ -214,7 +260,7 @@ export function RecordPane({ tool, record, actions, actionEnabled, onAction, onC
         </section>
       )}
 
-      {record && hasPolicy && (
+      {record && tab === 'summary' && hasPolicy && (
         <section className="ai">
           <div className="ai-head">
             <Icon name="sparkle" />
@@ -233,9 +279,9 @@ export function RecordPane({ tool, record, actions, actionEnabled, onAction, onC
         </section>
       )}
 
-      {record && hasPolicy && <AskPolicy tool={tool} record={record} />}
+      {record && tab === 'policy' && hasPolicy && <AskPolicy tool={tool} record={record} />}
 
-      {record && hasPolicy && (
+      {record && tab === 'policy' && hasPolicy && (
         <section className="policy">
           <div className="ai-head">
             <Icon name="book" />
@@ -255,7 +301,7 @@ export function RecordPane({ tool, record, actions, actionEnabled, onAction, onC
         </section>
       )}
 
-      {record && !showForm && (
+      {record && tab === 'details' && !showForm && (
         <section className="details">
           <div className="ai-head"><Icon name="grid" /><span>Details</span>
             <span className="spacer" />
@@ -277,7 +323,7 @@ export function RecordPane({ tool, record, actions, actionEnabled, onAction, onC
         </section>
       )}
 
-      {showForm && (
+      {(isNew || tab === 'details') && showForm && (
         <div className="form">
           {tool.fields.filter(f => !f.computed).map(f => (
             <div className="f" key={f.name}>
@@ -294,7 +340,7 @@ export function RecordPane({ tool, record, actions, actionEnabled, onAction, onC
         </div>
       )}
 
-      {record && (
+      {record && tab === 'details' && (
         <div className="audit">
           <h4>Audit trail</h4>
           {audit.length === 0 && <div className="sub">No changes recorded yet.</div>}

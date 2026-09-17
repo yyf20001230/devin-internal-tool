@@ -75,6 +75,7 @@ class ActionSpec(BaseModel):
     destructive: bool = False
     icon: str | None = None
     system: bool = False  # only runnable by automation (auto_review); hidden from the command bar
+    decision: Literal["approve", "reject", "info"] | None = None  # slot in the record pane's decision row
 
 
 class CheckSpec(BaseModel):
