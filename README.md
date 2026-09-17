@@ -115,19 +115,35 @@ references it with `auto_review: {policy: payout_policy}`. Don't put merchant, c
 identity data in these files — they are policy, they are sent to the embedding provider, and
 they are visible to every signed-in user.
 
-## Run it
+## Run it locally
+
+Needs Python 3.10+ and Node 18+.
 
 ```bash
+git clone https://github.com/yyf20001230/devin-internal-tool && cd devin-internal-tool
+python3 -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+npm --prefix web ci && npm --prefix web run build       # static UI → web/dist
+export OPENAI_API_KEY=sk-...                            # optional: live LLM + OpenAI embeddings
 python -m server.seed                                   # rebuild data.db with synthetic demo data
-npm --prefix web ci && npm --prefix web run build       # static UI
 uvicorn server.main:app --host 0.0.0.0 --port 8000      # UI + API on http://localhost:8000
-python -m pytest -q                                     # 52 governance / policy / AI / KB tests
 ```
+
+Open http://localhost:8000 and pick a demo identity. Without `OPENAI_API_KEY` everything
+still works on the offline rules engine and lexical embeddings (the AI panels say "rules"
+instead of "LLM"). `python -m pytest -q` runs the 52 governance / policy / AI / KB tests.
+
+After changing anything under `web/src`, run `npm --prefix web run build` again and hard-refresh
+the browser; the server serves the built files. Alternatively `npm --prefix web run dev` starts a
+hot-reloading dev server on :5173 that proxies the API to :8000.
 
 Optional: copy `.env.example` to `.env` and set `OPENAI_API_KEY` for live LLM output and
 `WEBHOOK_SIGNING_SECRET` for signed webhook payloads. In Devin Cloud these come from the
 Secrets store; nothing in the repo ever holds a value.
+
+**Working a queue fast:** hover a row for one-click actions (approve, reject, escalate, hold,
+enable, kill switch…) without opening it; ↑/↓ move through the queue, Enter opens the record,
+Esc closes it. Acting on an open record advances to the next one in the queue.
 
 Sign in as a demo identity — each sees only the boards its roles grant:
 

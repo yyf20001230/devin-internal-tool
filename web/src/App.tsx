@@ -182,11 +182,34 @@ export default function App() {
       const updated = await api.action(tool.id, a.id, r.id, comment)
       setPending(null)
       const leaves = view && !Object.entries(view.filter).every(([k, cond]) => matches(cond, updated[k]))
-      toast(`${a.label} → ${String(updated[tool.title_field])}${leaves ? ' · left this queue' : ''}${a.webhook ? ' · webhook queued' : ''}`)
-      if (leaves) { setPaneOpen(false); setSel(null) } else setSel(updated)
+      const idx = shown.findIndex(x => x.id === r.id)
+      const next = leaves ? shown[idx + 1] ?? shown[idx - 1] ?? null : null
+      const wasOpen = paneOpen && sel?.id === r.id
+      toast(`${a.label} → ${String(updated[tool.title_field])}${leaves ? ' · left this queue' : ''}${a.webhook ? ' · webhook queued' : ''}${leaves && wasOpen && next ? ` · next: ${String(next[tool.title_field])}` : ''}`)
+      if (!leaves) { if (wasOpen || sel?.id === r.id) setSel(updated) }
+      else if (wasOpen) { setSel(next); if (!next) setPaneOpen(false) }
+      else if (sel?.id === r.id) setSel(null)
       refresh()
     } catch (e) { toast((e as Error).message, true) }
   }
+
+  const quickActions = useMemo(() => tool ? tool.actions.filter(a => a.allowed) : [], [tool])
+
+  // Keyboard: ↑/↓ move through the queue, Enter opens the record, Esc closes the pane.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (pending || !tool || (t && /INPUT|TEXTAREA|SELECT/.test(t.tagName))) return
+      if (e.key === 'Escape') { setPaneOpen(false); return }
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Enter') return
+      if (e.key === 'Enter') { if (sel) setPaneOpen(true); return }
+      e.preventDefault()
+      const i = sel ? shown.findIndex(x => x.id === sel.id) : -1
+      const n = shown[e.key === 'ArrowDown' ? Math.min(i + 1, shown.length - 1) : Math.max(i - 1, 0)]
+      if (n) setSel(n)
+    }
+    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
+  }, [shown, sel, pending, tool])
 
   async function runAutoReview() {
     if (!tool || !viewId) return
@@ -360,11 +383,24 @@ export default function App() {
                         </th>
                       )
                     })}
+                    {quickActions.length > 0 && <th className="row-acts" title="Quick actions — hover a row, or open it for the full record" />}
                   </tr></thead>
                   <tbody>
                     {shown.map(r => (
                       <tr key={r.id} className={`row ${sel?.id === r.id ? 'sel' : ''}`} onClick={() => { setSel(r); setPaneOpen(true) }}>
                         {columns.map(f => <td key={f.name} className={isNumeric(f) ? 'num' : ''}><Cell f={f} r={r} isTitle={f.name === tool?.title_field} /></td>)}
+                        {quickActions.length > 0 && (
+                          <td className="row-acts" onClick={e => e.stopPropagation()}>
+                            <span className="acts">
+                              {quickActions.filter(a => actionEnabled(a, r)).map(a => (
+                                <button key={a.id} className={`iconbtn ${a.destructive ? 'danger' : /approve|resolve|clear|resume|pay|enable/.test(a.id) ? 'ok' : ''}`}
+                                  title={`${a.label}${a.requires_comment ? ' (comment required)' : ''}`} onClick={() => { setSel(r); startAction(a, r) }}>
+                                  <Icon name={actionIcon(a.id, a.icon, a.destructive)} size={14} />
+                                </button>
+                              ))}
+                            </span>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>

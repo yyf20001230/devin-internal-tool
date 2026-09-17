@@ -1,5 +1,6 @@
 import type { FieldSpec, Rec } from './api'
 import { fmt } from './api'
+import { Icon } from './Icon'
 
 const STATUS_COLOURS: Record<string, string> = {
   Approved: 'green', Paid: 'green', Low: 'green', Won: 'green', Submitted: 'green', Open: 'blue',
@@ -10,6 +11,24 @@ const STATUS_COLOURS: Record<string, string> = {
 }
 export const pillColour = (v: string) => STATUS_COLOURS[v] ?? ''
 
+// Only the record's status is a pill; everything else is a dot, an icon or plain text so a
+// row reads as one line of data rather than a stack of tags.
+const PILL_FIELDS = new Set(['status'])
+const VERDICT_ICON: Record<string, { icon: string; cls: string }> = {
+  Cleared: { icon: 'check', cls: 'green' }, 'Needs review': { icon: 'alert', cls: 'amber' }, Flagged: { icon: 'x', cls: 'red' },
+}
+
+function Choice({ f, v }: { f: FieldSpec; v: string }) {
+  if (f.name === 'policy_verdict') {
+    const m = VERDICT_ICON[v]
+    return m ? <span className={`verdict ${m.cls}`} title={`Policy check: ${v}`}><Icon name={m.icon} size={13} /></span> : <>{v}</>
+  }
+  const colour = STATUS_COLOURS[v] ?? ''
+  if (PILL_FIELDS.has(f.name)) return <span className={`pill ${colour}`}>{v}</span>
+  if (colour) return <span className={`dotted ${colour}`}><span className="dot" />{v}</span>
+  return <>{v}</>
+}
+
 export function Cell({ f, r, isTitle }: { f: FieldSpec; r: Rec; isTitle?: boolean }) {
   const v = r[f.name]
   if (f.masked && v != null) return <span className="masked" title="Hidden by column-level security">{String(v)}</span>
@@ -18,9 +37,9 @@ export function Cell({ f, r, isTitle }: { f: FieldSpec; r: Rec; isTitle?: boolea
   switch (f.type) {
     case 'boolean':
       if (['dev', 'uat', 'prod'].includes(f.name)) return <span className={`tgl ${v ? 'on' : ''}`} />
-      if (/verified|complete|approved|cr_|change/.test(f.name)) return v ? <span className="pill green">Yes</span> : <span className="pill amber">No</span>
-      return v ? <span className="pill red">Yes</span> : <span style={{ color: '#5c5c62' }}>No</span>
-    case 'choice': return <span className={`pill ${STATUS_COLOURS[String(v)] ?? ''}`}>{String(v)}</span>
+      if (/verified|complete|approved|cr_|change/.test(f.name)) return v ? <span className="green">Yes</span> : <span className="amber">No</span>
+      return v ? <span className="red" style={{ fontWeight: 600 }}>Yes</span> : <span style={{ color: '#5c5c62' }}>No</span>
+    case 'choice': return <Choice f={f} v={String(v)} />
     case 'money': return <>{fmt.money(Number(v), typeof r.currency === 'string' ? r.currency : 'GBP')}</>
     case 'percent': return <>{fmt.num(Number(v))}%</>
     case 'number': return <>{fmt.num(Number(v))}</>

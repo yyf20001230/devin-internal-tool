@@ -175,6 +175,22 @@ td .link { color: var(--text); font-weight: 600; }
 .pill.red { background: rgba(240,82,79,.16); color: var(--red); }
 .pill.purple { background: rgba(176,131,240,.16); color: var(--purple); }
 .pill.blue { background: rgba(88,166,255,.16); color: var(--blue); }
+.dotted { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); }
+.dotted .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+.dotted.green .dot { background: var(--green); } .dotted.amber .dot { background: var(--amber); } .dotted.red .dot { background: var(--red); }
+.dotted.blue .dot { background: var(--blue); } .dotted.purple .dot { background: var(--purple); }
+.dotted.red { color: var(--text); }
+.verdict { display: inline-flex; }
+.verdict.green { color: var(--green); } .verdict.amber { color: var(--amber); } .verdict.red { color: var(--red); }
+.purple { color: var(--purple); } .blue { color: var(--blue); }
+td.row-acts { text-align: right; padding: 3px 8px; width: 1%; }
+.row-acts .acts { display: inline-flex; gap: 4px; opacity: 0; transition: opacity .1s; }
+tr.row:hover .row-acts .acts, tr.row.sel .row-acts .acts, .row-acts .acts:focus-within { opacity: 1; }
+.row-acts .iconbtn { padding: 4px 6px; color: var(--text); background: var(--bg-3); border: 1px solid var(--line-strong); border-radius: 5px; }
+.row-acts .iconbtn:hover { border-color: var(--text-2); }
+.row-acts .iconbtn.ok { color: var(--green); } .row-acts .iconbtn.danger { color: var(--red); }
+.row-acts .iconbtn.ok:hover { background: rgba(63,185,80,.15); border-color: var(--green); }
+.row-acts .iconbtn.danger:hover { background: rgba(240,82,79,.15); border-color: var(--red); }
 .masked { color: var(--faint); letter-spacing: 1px; }
 .tgl { width: 34px; height: 18px; border-radius: 9px; display: inline-block; position: relative; vertical-align: -4px; background: var(--line-strong); }
 .tgl.on { background: var(--green); }
