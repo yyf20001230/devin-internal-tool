@@ -1,4 +1,5 @@
 """Governance tests that run against EVERY tool YAML, so a new tool inherits them for free."""
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -510,3 +511,31 @@ def test_concurrent_requests_share_one_sqlite_connection_safely(client):
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(lambda f: f(), calls * 3))
     assert all(r.status_code == 200 for r in results), [r.status_code for r in results if r.status_code != 200]
+
+
+# ---- one image per tool: TOOLS=<id> restricts what a process loads, seeds and serves ---------
+def test_load_tools_only_filters_and_rejects_unknown_ids():
+    assert list(load_tools(TOOLS_DIR, only="kyc")) == ["kyc"]
+    assert set(load_tools(TOOLS_DIR, only="kyc, flags")) == {"kyc", "flags"}
+    with pytest.raises(ValueError, match="no_such_tool"):
+        load_tools(TOOLS_DIR, only="no_such_tool")
+
+
+def test_single_tool_instance_seeds_and_serves_only_that_tool(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("TOOLS", "refunds")
+    db = tmp_path / "refunds.db"
+    seed(db, TOOLS_DIR)
+    c = TestClient(build_app(TOOLS_DIR, db, provider=RulesProvider(), embedder=LexicalEmbedder()))
+    assert {u["id"] for u in c.get("/api/users").json()} == {"sofia", "dan", "auditor"}  # only personas with a board here
+    assert [t["id"] for t in c.get("/api/me", headers=h("sofia")).json()["tools"]] == ["refunds"]
+    assert c.get("/api/tools/refunds/records?view=awaiting&q=", headers=h("sofia")).status_code == 200
+    assert c.get("/api/tools/kyc", headers=h("marcus")).status_code == 404
+    assert len(c.get("/api/tools/refunds/records?view=all&q=", headers=h("sofia")).json()) == 160
+
+
+def test_seed_data_is_identical_whether_or_not_other_tools_ship(tmp_path: Path, monkeypatch):
+    seed(tmp_path / "all.db", TOOLS_DIR)
+    monkeypatch.setenv("TOOLS", "kyc")
+    seed(tmp_path / "kyc.db", TOOLS_DIR)
+    rows = lambda p: sqlite3.connect(p).execute("SELECT applicant, risk_score, status FROM kyc_case ORDER BY id").fetchall()  # noqa: E731
+    assert rows(tmp_path / "all.db") == rows(tmp_path / "kyc.db")

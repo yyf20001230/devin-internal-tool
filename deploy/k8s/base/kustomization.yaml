@@ -1,8 +1,8 @@
+# Shared building blocks; deploy via an overlay (overlays/all or overlays/<tool>), never directly.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: internal-tools
 resources:
-  - namespace.yaml
   - configmap.yaml
   - pvc.yaml
   - deployment.yaml

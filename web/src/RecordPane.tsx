@@ -191,20 +191,22 @@ export function RecordPane({ tool, record, actions, actionEnabled, onAction, onC
   const hasPolicy = tool.checks.length > 0
 
   useEffect(() => {
+    let live = true  // drop responses that land after the user has moved to another record
     setErr(''); setReview(null); setSummary(null)
     if (!hasPolicy) setTab(t => (t === 'policy' ? 'summary' : t))
     if (record) {
       setValues({ ...record }); setShowForm(false)
-      api.audit(tool.id, record.id).then(setAudit).catch(() => setAudit([]))
+      api.audit(tool.id, record.id).then(a => live && setAudit(a)).catch(() => live && setAudit([]))
       if (hasPolicy) {
-        api.review(tool.id, record.id).then(setReview).catch(() => setReview(null))
-        api.summary(tool.id, record.id).then(setSummary).catch(() => setSummary(null))
+        api.review(tool.id, record.id).then(r => live && setReview(r)).catch(() => live && setReview(null))
+        api.summary(tool.id, record.id).then(s => live && setSummary(s)).catch(() => live && setSummary(null))
       }
     } else {
       const d: Record<string, unknown> = {}
       tool.fields.forEach(f => { if (f.default != null) d[f.name] = f.default })
       setValues(d); setAudit([]); setShowForm(true)
     }
+    return () => { live = false }
   }, [tool, record, hasPolicy])
 
   const dirty = record ? tool.fields.some(f => !f.masked && !f.computed && (values[f.name] ?? '') !== (record[f.name] ?? '')) : true

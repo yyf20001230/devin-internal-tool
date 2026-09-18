@@ -6,6 +6,7 @@ is derived from a Dataverse table.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -194,13 +195,21 @@ class Directory(BaseModel):
     users: list[User]
 
 
-def load_tools(directory: Path) -> dict[str, ToolSpec]:
+def load_tools(directory: Path, only: str | None = None) -> dict[str, ToolSpec]:
+    """Every tools/*.yaml except `_*`. `only` (default: the TOOLS env var) is a comma-separated
+    list of tool ids that restricts the set, so one image / process can serve a single tool."""
+    only = os.environ.get("TOOLS", "") if only is None else only
+    wanted = {t.strip() for t in only.split(",") if t.strip()}
     tools: dict[str, ToolSpec] = {}
     for path in sorted(directory.glob("*.yaml")):
         if path.name.startswith("_"):
             continue
         spec = ToolSpec.model_validate(yaml.safe_load(path.read_text()))
+        if wanted and spec.id not in wanted:
+            continue
         tools[spec.id] = spec
+    if wanted and (missing := wanted - tools.keys()):
+        raise ValueError(f"TOOLS names unknown tool id(s): {', '.join(sorted(missing))}")
     return tools
 
 

@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import random
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from .engine import Engine, now
 from .main import DB_PATH, TOOLS_DIR
-from .spec import User, load_tools
+from .spec import ToolSpec, User, load_tools
 
 SYSTEM = User(id="system", name="system", roles=["compliance_lead", "finance", "release_manager", "engineer", "payments_ops", "analyst"])
 
@@ -16,15 +16,11 @@ def iso(dt):
     return dt.isoformat(timespec="seconds")
 
 
-def seed(db_path: Path | str = DB_PATH, tools_dir: Path = TOOLS_DIR) -> None:
-    random.seed(7)
-    Path(db_path).unlink(missing_ok=True)
-    tools = load_tools(tools_dir)
-    eng = Engine(db_path, tools)
-    t = now()
+MERCHANTS = ["Bloom & Co", "Northwind Traders", "Fitlab", "Cloudpress", "Urban Bikes", "Petrov Digital",
+             "Maple Retail", "Tandem Mobility", "Silverline Media", "Harbour Grill"]
 
-    # ---- KYC ----------------------------------------------------------------------
-    kyc = tools["kyc"]
+
+def seed_kyc(eng: Engine, kyc: ToolSpec, t: datetime) -> None:
     analysts = ["Priya Nair", "Marcus Chen", "Jonas Berg", "Aisha Khan"]
     countries = ["GB", "DE", "NG", "US", "FR", "AE", "IN", "BR"]
     applicants = ["Northwind Traders Ltd", "Aurora Fintech GmbH", "Lagos Freight Co", "Okonkwo Holdings",
@@ -57,10 +53,8 @@ def seed(db_path: Path | str = DB_PATH, tools_dir: Path = TOOLS_DIR) -> None:
             "notes": "Sanctions screening returned a partial name match; awaiting UBO declaration." if score > 80 else "",
         })
 
-    # ---- Refunds -----------------------------------------------------------------------
-    ref = tools["refunds"]
-    merchants = ["Bloom & Co", "Northwind Traders", "Fitlab", "Cloudpress", "Urban Bikes", "Petrov Digital",
-                 "Maple Retail", "Tandem Mobility", "Silverline Media", "Harbour Grill"]
+
+def seed_refunds(eng: Engine, ref: ToolSpec, t: datetime) -> None:
     reasons = ref.field("reason").options
     for i in range(160):
         requested = t - timedelta(days=random.randint(0, 29), hours=random.randint(0, 23))
@@ -82,7 +76,7 @@ def seed(db_path: Path | str = DB_PATH, tools_dir: Path = TOOLS_DIR) -> None:
             status = random.choices(["Approved", "Paid", "Rejected"], weights=[30, 60, 10])[0]
         risk = "High" if reason == "Fraud reversal" or amount > 2500 else "Medium" if amount > 600 else "Low"
         eng.create_record(ref, SYSTEM, {
-            "refund_id": f"RF-{88210 + i}", "merchant": random.choice(merchants), "amount": amount,
+            "refund_id": f"RF-{88210 + i}", "merchant": random.choice(MERCHANTS), "amount": amount,
             "currency": random.choices(["GBP", "EUR", "USD"], weights=[6, 3, 1])[0],
             "rail": random.choices(["Card", "Bank transfer", "Wallet"], weights=[6, 3, 1])[0],
             "reason": reason, "risk": risk,
@@ -93,8 +87,8 @@ def seed(db_path: Path | str = DB_PATH, tools_dir: Path = TOOLS_DIR) -> None:
             "requested_at": iso(requested),
         })
 
-    # ---- Feature flags -----------------------------------------------------------------
-    fl = tools["flags"]
+
+def seed_flags(eng: Engine, fl: ToolSpec, t: datetime) -> None:
     flags = [
         ("refunds.instant-card-refunds", "refunds-svc", "Instant card refunds via network push", True, True, True, 25, "CR-2231", "Approved", "Lin Zhao", False),
         ("payments.3ds2-challenge-flow", "payments-api", "Force 3DS2 challenge on high-risk", True, True, True, 100, "CR-2198", "Approved", "Amara Okafor", False),
@@ -116,15 +110,15 @@ def seed(db_path: Path | str = DB_PATH, tools_dir: Path = TOOLS_DIR) -> None:
             "last_changed": iso(t - timedelta(days=random.randint(0, 60))), "stale": stale,
         })
 
-    # ---- Chargebacks (4th tool demo) ----------------------------------------------------
-    cb = tools["chargebacks"]
+
+def seed_chargebacks(eng: Engine, cb: ToolSpec, t: datetime) -> None:
     codes = cb.field("reason_code").options
     for i in range(36):
         closed = i >= 22
         status = random.choices(["Won", "Lost", "Accepted loss"], weights=[5, 3, 2])[0] if closed else "Open"
         evidence = random.choice(["Not started", "Gathering", "Submitted"]) if not closed else ("Not contesting" if status == "Accepted loss" else "Submitted")
         eng.create_record(cb, SYSTEM, {
-            "dispute_id": f"CB-{50210 + i}", "merchant": random.choice(merchants),
+            "dispute_id": f"CB-{50210 + i}", "merchant": random.choice(MERCHANTS),
             "amount": round(random.uniform(20, 1800), 2), "currency": random.choices(["GBP", "EUR", "USD"], weights=[6, 3, 1])[0],
             "reason_code": random.choices(codes, weights=[35, 25, 15, 15, 10])[0],
             "deadline": iso(t + timedelta(hours=random.choice([6, 20, 30, 44, 70, 120, 200, 300]))),
@@ -133,6 +127,20 @@ def seed(db_path: Path | str = DB_PATH, tools_dir: Path = TOOLS_DIR) -> None:
             "cardholder_name": random.choice(["A. Thompson", "M. Dubois", "K. Okafor", "L. Chen", "S. Novak"]),
             "card_last4": f"{random.randint(1000, 9999)}",
         })
+
+# tool id -> seeder; a tool that is not loaded (see TOOLS in spec.load_tools) is simply skipped
+SEEDERS = {"kyc": seed_kyc, "refunds": seed_refunds, "flags": seed_flags, "chargebacks": seed_chargebacks}
+
+
+def seed(db_path: Path | str = DB_PATH, tools_dir: Path = TOOLS_DIR) -> None:
+    Path(db_path).unlink(missing_ok=True)
+    tools = load_tools(tools_dir)
+    eng = Engine(db_path, tools)
+    t = now()
+    for tid, fn in SEEDERS.items():
+        if tid in tools:
+            random.seed(tid)  # same data whichever tools ship in the image
+            fn(eng, tools[tid], t)
 
     # wipe the noisy seed audit rows so the audit pane shows real user activity
     eng.conn.execute("DELETE FROM audit_log")
