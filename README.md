@@ -35,6 +35,7 @@ platform code, all governance tests inherited.
 | Turn on OpenAI (LLM + embeddings) locally or in the cluster | [Configure OpenAI](#configure-openai-llm--embedding-model) |
 | Add or change a policy rule the AI and checks use | [Maintaining the knowledge base](#maintaining-the-knowledge-base-for-ops-compliance-and-engineering) |
 | Add a whole new tool from a paragraph | `/new-tool` skill (`.devin/skills/new-tool/SKILL.md`) |
+| See what it looks like | [Feature tour](#feature-tour) |
 
 ## What it replicates from Power Apps
 
@@ -54,6 +55,37 @@ platform code, all governance tests inherited.
 | Copilot in the app | case summary + plain-English queries compiled to the grid's own validated filter |
 | Business rules | `knowledge/*.md` clauses cited by `checks:`; `auto_review` clears / flags with a clause reference |
 | Templates / maker | `/new-tool` skill + playbook; Devin opens the PR |
+
+## Feature tour
+
+Screenshots from the all-in-one instance (`make minikube` → `make forward` → http://localhost:8080;
+regenerate with `APP_URL=http://localhost:8080 node scripts/feature_shots.mjs`).
+
+**Sign-in and role-scoped boards** — personas carry roles from `tools/_users.yaml`; a user only sees the
+boards their roles grant, and every action is recorded against them.
+
+![Sign-in page listing demo personas and their roles](docs/screens/f1-sign-in.png)
+
+**Schema-driven board** — one YAML gives the KPI tiles, charts, views, sortable grid (risk first,
+masked columns), the detail pane with Summary / Policy check / Details tabs, and the decision
+buttons; the AI case summary cites the clauses it relied on.
+
+![KYC review queue with dashboard, grid and Summary tab with Approve / Reject / Request more info](docs/screens/f2-kyc-summary-decisions.png)
+
+**Policy checks grounded in the knowledge base** — each record is judged against cited clauses from
+`knowledge/*.md`; *Ask the policy* answers from the same indexed clauses (`KYC-3.2`, `KYC-4.1`, …).
+
+![Policy check tab: ask-the-policy answer with clause citations above per-clause checks](docs/screens/f3-kyc-policy-check-ask.png)
+
+**Advisory governance with an audit trail** — decisions are never greyed out; a decision that goes
+against policy shows the clauses, requires a comment, and is written to the audit log as an override.
+
+![Warning modal: approving a >1,000 refund as payments ops lists RF-1.2, RF-4.1, RF-3.1 and asks for a justification](docs/screens/f4-refund-policy-warning-modal.png)
+
+**More boards, same platform** — the feature-flag admin panel (UAT / PROD state, change-request
+status, kill switch) is another YAML file; refunds and chargebacks likewise.
+
+![Feature flags board with UAT / PROD indicators and a flag's Summary tab](docs/screens/f5-flags-board.png)
 
 ## AI inside the tools
 
@@ -161,24 +193,28 @@ per instance, rebuilt from the Markdown, never edited by hand.
 ## Run it locally
 
 **Prerequisites: Python 3.10+ and Node 18+.** macOS ships Python 3.9 with the Xcode
-command-line tools, which is too old, and has no Node — install both first:
+command-line tools, which is too old, and has no Node — install both first (macOS via
+[Homebrew](https://brew.sh); on Linux `apt install python3.12 python3.12-venv nodejs npm`):
 
 ```bash
-brew install python@3.12 node        # macOS (https://brew.sh); Linux: apt install python3.12 python3.12-venv nodejs npm
+brew install python@3.12 node
 python3.12 --version && node --version
 ```
 
+Then clone, create a venv (Windows: `py -3.12 -m venv .venv && .venv\Scripts\activate`), build the
+static UI into `web/dist`, seed `data.db` with synthetic demo data and start the server:
+
 ```bash
 git clone https://github.com/yyf20001230/devin-internal-tool && cd devin-internal-tool
-python3.12 -m venv .venv && source .venv/bin/activate   # Windows: py -3.12 -m venv .venv && .venv\Scripts\activate
+python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-npm --prefix web ci && npm --prefix web run build       # static UI → web/dist
-export OPENAI_API_KEY=sk-...                            # optional: live LLM + OpenAI embeddings
-python -m server.seed                                   # rebuild data.db with synthetic demo data
-uvicorn server.main:app --host 0.0.0.0 --port 8000      # UI + API on http://localhost:8000
+npm --prefix web ci && npm --prefix web run build
+export OPENAI_API_KEY=sk-...
+python -m server.seed
+uvicorn server.main:app --host 0.0.0.0 --port 8000
 ```
 
-Open http://localhost:8000 and pick a demo identity. Without `OPENAI_API_KEY` everything
+`export OPENAI_API_KEY` is optional (live LLM + OpenAI embeddings). Open http://localhost:8000 and pick a demo identity. Without `OPENAI_API_KEY` everything
 still works on the offline rules engine and lexical embeddings (the AI panels say "rules"
 instead of "LLM"). `python -m pytest -q` runs the 58 governance / policy / AI / KB tests.
 
@@ -242,19 +278,38 @@ PVC (so its own SQLite file and audit log); they share the namespace and the Ope
 kubectl and make:
 
 ```bash
-brew install minikube kubectl            # macOS; Linux: see the minikube link above
+brew install minikube kubectl
 minikube version && kubectl version --client
 ```
 
+(macOS; on Linux follow the minikube link above.) Then, from the repo, pick **one** of:
+
+| Command | What you get |
+|---|---|
+| `make minikube` | start the cluster, build `internal-tools:dev`, deploy the all-in-one instance |
+| `make split` | three images + three instances (KYC, refunds, flags) |
+| `make minikube TOOL=kyc` | just one per-tool instance (`kyc`, `refunds` or `flags`) |
+
 ```bash
 cd devin-internal-tool
-export OPENAI_API_KEY=sk-...   # optional; omit for offline rules/lexical mode
-make minikube                  # all-in-one instance: start cluster, build image, deploy
-make split                     # or: three images + three instances (KYC, refunds, flags)
-make minikube TOOL=kyc         # or: just one of the per-tool instances
+git checkout main && git pull
+export OPENAI_API_KEY=sk-...
+make minikube
 ```
 
-The first `make minikube` takes a few minutes (cluster start + image build); later runs reuse both.
+`export OPENAI_API_KEY` is optional — omit it for the offline rules / lexical mode. The first
+`make minikube` takes a few minutes (cluster start + image build); later runs reuse both.
+
+**Troubleshooting**
+
+- `make: *** No rule to make target 'minikube'` — your checkout predates the minikube work.
+  `git checkout main && git pull`, then `grep -n '^minikube:' Makefile` should print the target.
+  The Makefile is tested with GNU make 3.81 (the one macOS ships) and 4.x.
+- `zsh: unknown file attribute: K` / `command not found: #` — a trailing `# comment` was pasted
+  along with the command. Plain macOS zsh does not treat `#` as a comment on an interactive line,
+  so `(KYC, refunds, flags)` is parsed as a glob qualifier. Paste commands only, one per line
+  (the code blocks in this README contain no comments for that reason).
+- `zsh: command not found: minikube` — install the prerequisites above (Docker Desktop must be running).
 
 ### Open it on localhost
 
@@ -262,12 +317,16 @@ With the Docker driver (the default on macOS/Windows) the cluster's NodePorts ar
 from your machine, so map an instance to a local port with `kubectl port-forward` — wrapped as
 `make forward`:
 
+| Command | Opens | Notes |
+|---|---|---|
+| `make forward` | all-in-one → http://localhost:8080 | foreground; Ctrl-C stops it |
+| `make forward TOOL=kyc` | KYC → http://localhost:8081 | |
+| `make forward TOOL=refunds` | Refunds → http://localhost:8082 | |
+| `make forward TOOL=flags` | Feature flags → http://localhost:8083 | |
+| `make split-forward` | all three per-tool forwards, in the background | `make unforward` stops them |
+
 ```bash
-make forward                   # all-in-one   → http://localhost:8080   (Ctrl-C stops it)
-make forward TOOL=kyc          # KYC          → http://localhost:8081
-make forward TOOL=refunds      # Refunds      → http://localhost:8082
-make forward TOOL=flags        # Feature flags→ http://localhost:8083
-make split-forward             # all three per-tool forwards in the background; `make unforward` stops them
+make forward
 ```
 
 Open http://localhost:8080 and sign in. Under the hood: `kubectl -n internal-tools port-forward svc/internal-tools 8080:80`.
@@ -276,10 +335,12 @@ On Linux the NodePort URLs also work directly (`make url` / `make urls` print th
 ### Which images exist, and what is inside
 
 ```bash
-minikube image ls | grep internal-tools   # the four app images loaded into the cluster
-make status                               # pods, services, PVCs in the namespace
+minikube image ls | grep internal-tools
+make status
 kubectl -n internal-tools exec deploy/internal-tools-kyc -- ls /app/tools /app/knowledge
 ```
+
+(the app images loaded into the cluster; pods, services and PVCs in the namespace; what one image ships.)
 
 Each image is ~73 MB (`python:3.12-slim`, non-root user 10001, UI pre-built), contains only the
 selected `tools/*.yaml` plus `_users.yaml`, every `knowledge/*.md`, and stores its SQLite file on its
@@ -291,8 +352,10 @@ Any tool id in `tools/*.yaml` can become its own image. The Chargeback Watchlist
 worked example (not part of `make split` by default):
 
 ```bash
-make minikube TOOL=chargebacks && make forward TOOL=chargebacks   # → http://localhost:8084
+make minikube TOOL=chargebacks && make forward TOOL=chargebacks
 ```
+
+opens it at http://localhost:8084.
 
 For a new tool `payouts` (after `/new-tool` has created `tools/payouts.yaml`):
 
@@ -351,28 +414,40 @@ knowledge base uses a local hashed-TF-IDF embedding. With a key the same code pa
 
 How to set them, per way of running:
 
-```bash
-# 1. Local uvicorn — export in the shell before starting (or put them in .env, copied from .env.example)
-export OPENAI_API_KEY=sk-...
-export OPENAI_MODEL=gpt-4o-mini                      # optional override
-export OPENAI_EMBEDDING_MODEL=text-embedding-3-small # optional override
-python -m server.seed && uvicorn server.main:app --port 8000
+1. **Local uvicorn** — export in the shell before starting (or put them in `.env`, copied from
+   `.env.example`). The two model exports are optional overrides.
 
-# 2. minikube — the key goes into a Kubernetes Secret shared by every instance; models live in the ConfigMap
-export OPENAI_API_KEY=sk-...
-make secret                    # creates/updates internal-tools-secrets from your shell and restarts all pods
-#   models: edit deploy/k8s/base/configmap.yaml (OPENAI_MODEL / OPENAI_EMBEDDING_MODEL), then `make deploy` (or split-deploy)
+   ```bash
+   export OPENAI_API_KEY=sk-...
+   export OPENAI_MODEL=gpt-4o-mini
+   export OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+   python -m server.seed && uvicorn server.main:app --port 8000
+   ```
 
-# 3. Devin Cloud — add OPENAI_API_KEY / WEBHOOK_SIGNING_SECRET in Settings → Secrets; every session gets them as env vars
-```
+2. **minikube** — the key goes into a Kubernetes Secret (`internal-tools-secrets`) shared by every
+   instance; `make secret` creates/updates it from your shell and restarts all pods. Models live in
+   the ConfigMap: edit `deploy/k8s/base/configmap.yaml` (`OPENAI_MODEL` / `OPENAI_EMBEDDING_MODEL`),
+   then `make deploy` (or `make split-deploy`).
+
+   ```bash
+   export OPENAI_API_KEY=sk-...
+   make secret
+   ```
+
+3. **Devin Cloud** — add `OPENAI_API_KEY` / `WEBHOOK_SIGNING_SECRET` in Settings → Secrets; every
+   session gets them as environment variables.
 
 Check what an instance is actually using:
 
 ```bash
 curl -s -H 'X-User: marcus' http://localhost:8080/api/knowledge/status
-# → {"backend":"openai","model":"text-embedding-3-small","configured":"openai","chunks":53,"docs":[...],"indexed_at":...,"last_error":null}
-#   backend "lexical" = running offline (no key, or fell back after an API error shown in last_error)
 ```
+
+```json
+{"backend":"openai","model":"text-embedding-3-small","configured":"openai","chunks":53,"docs":["..."],"indexed_at":"...","last_error":null}
+```
+
+`"backend":"lexical"` means it is running offline (no key, or it fell back after an API error shown in `last_error`).
 
 Rules the code enforces regardless of provider: protected/masked fields are removed before any
 payload leaves the process; model output is validated against the tool schema; every AI call is
