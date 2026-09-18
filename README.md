@@ -36,6 +36,7 @@ platform code, all governance tests inherited.
 | Add or change a policy rule the AI and checks use | [Maintaining the knowledge base](#maintaining-the-knowledge-base-for-ops-compliance-and-engineering) |
 | Add a whole new tool from a paragraph | `/new-tool` skill (`.devin/skills/new-tool/SKILL.md`) |
 | See what it looks like | [Feature tour](#feature-tour) |
+| See what the same boards would look like in Power Apps | [Power Apps mockups](#what-the-same-boards-look-like-in-power-apps) (`mockup/power-apps/`) |
 
 ## What it replicates from Power Apps
 
@@ -86,6 +87,17 @@ against policy shows the clauses, requires a comment, and is written to the audi
 status, kill switch) is another YAML file; refunds and chargebacks likewise.
 
 ![Feature flags board with UAT / PROD indicators and a flag's Summary tab](docs/screens/f5-flags-board.png)
+
+### What the same boards look like in Power Apps
+
+Mockups of the three boards as model-driven Power Apps (left nav, command bar, dashboard tiles,
+view selector, Dataverse grid, Copilot pane), with the same demo data. They are hand-built HTML
+(`mockup/power-apps/*.html` + `common.css`), not screenshots of a real tenant; open the HTML in a
+browser at 1600 px wide to regenerate.
+
+| KYC review queue | Refunds dashboard | Feature flags |
+|---|---|---|
+| ![KYC review queue as a Power Apps model-driven app](mockup/power-apps/kyc-review-queue.png) | ![Refunds dashboard as a Power Apps model-driven app](mockup/power-apps/refunds-dashboard.png) | ![Feature flags panel as a Power Apps model-driven app](mockup/power-apps/feature-flags.png) |
 
 ## AI inside the tools
 
