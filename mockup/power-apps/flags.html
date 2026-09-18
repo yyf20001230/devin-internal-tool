@@ -1,0 +1,102 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="common.css">
+<style>
+.tgl { width:36px; height:18px; border-radius:9px; display:inline-block; position:relative; vertical-align:-3px; }
+.tgl.on { background:#742774; } .tgl.off { background:#c8c6c4; }
+.tgl:after { content:""; position:absolute; top:2px; width:14px; height:14px; border-radius:50%; background:#fff; }
+.tgl.on:after { right:2px; } .tgl.off:after { left:2px; }
+.top { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; margin-bottom:12px; }
+.kpi .l { color:#616161; font-size:12px; } .kpi .v { font-size:24px; font-weight:600; margin-top:2px; } .kpi .d { font-size:12px; }
+.bad { color:#a4262c; }
+.banner { background:#fff8e8; border:1px solid #f5e2b8; border-radius:4px; padding:8px 12px; margin-bottom:10px; color:#8a6100; }
+.side { width:290px; border-left:1px solid #ebe5ee; background:#fff; padding:14px 16px; flex-shrink:0; }
+.side h3 { font-size:14px; margin:0 0 12px; }
+.side .row { margin-bottom:12px; }
+.side .k { font-size:11px; color:#616161; text-transform:uppercase; letter-spacing:.3px; }
+.side .v { margin-top:3px; }
+.slider { height:6px; background:#f3f0f4; border-radius:3px; margin-top:6px; }
+.slider .f { height:100%; width:25%; background:#742774; border-radius:3px; }
+.audit { font-size:12px; color:#424242; border-left:2px solid #e3cfe5; padding-left:10px; margin-bottom:10px; }
+.audit b { font-weight:600; }
+.stk { display:flex; gap:4px; height:12px; border-radius:6px; overflow:hidden; margin-top:8px; }
+.stk span { display:block; height:100%; }
+.legend { display:flex; gap:12px; font-size:11.5px; color:#616161; margin-top:8px; flex-wrap:wrap; }
+.sw { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; }
+</style></head>
+<body>
+<div class="appbar">
+  <div class="left"><span class="waffle">&#8942;&#8942;&#8942;</span><span class="prod">Power Apps</span><span class="sep">|</span><span>Release Control</span></div>
+  <div class="search">&#128269; Search</div>
+  <div class="right">
+    <span class="env"><span>&#127970;</span><span><small>Environment</small>Fintech &ndash; PROD</span></span>
+    <span class="newlook">New look <span class="sw"></span></span>
+    <span>&#43;</span><span>&#9881;</span><span>?</span><span class="avatar">EM</span>
+  </div>
+</div>
+<div class="shell">
+  <nav class="nav">
+    <div class="hamb">&#9776;</div>
+    <a><span class="ico">&#8962;</span> Home</a>
+    <a class="active"><span class="ico">&#9873;</span> Feature flags</a>
+    <a><span class="ico">&#128101;</span> Audiences</a>
+    <a><span class="ico">&#9201;</span> Scheduled rollouts</a>
+    <a><span class="ico">&#128220;</span> Change log</a>
+    <div class="divider"></div>
+    <div class="group">Governance</div>
+    <a><span class="ico">&#10003;</span> Approvals</a>
+    <a><span class="ico">&#128274;</span> Kill switches</a>
+    <div class="divider"></div>
+    <a><span class="ico">&#8943;</span> More</a>
+  </nav>
+  <div class="main">
+    <div class="cmdbar">
+      <span class="cmd"><span class="ico">&#43;</span> New flag</span>
+      <span class="cmd"><span class="ico">&#8635;</span> Refresh all</span>
+      <span class="cmd"><span class="ico">&#9881;</span> Request approval (Flow)</span>
+      <span class="cmd"><span class="ico">&#128220;</span> View audit trail</span>
+      <span class="spacer"></span>
+      <button class="btn danger">Kill switch: disable all beta flags</button>
+      <button class="btn sec">&#8599; Share</button>
+    </div>
+    <div class="viewhead"><h1>Feature flags</h1><span class="caret">&#9662;</span></div>
+    <div class="top">
+      <div class="tile kpi"><div class="l">Flags on in PROD</div><div class="v">41 <span style="font-size:13px;color:#616161;font-weight:400">of 63</span></div>
+        <div class="stk"><span style="width:65%;background:#742774"></span><span style="width:20%;background:#c9a3cb"></span><span style="width:15%;background:#e3cfe5"></span></div>
+        <div class="legend"><span><span class="sw" style="background:#742774"></span>PROD 41</span><span><span class="sw" style="background:#c9a3cb"></span>UAT only 13</span><span><span class="sw" style="background:#e3cfe5"></span>DEV only 9</span></div></div>
+      <div class="tile kpi"><div class="l">Without change request</div><div class="v bad">2</div><div class="d bad">Policy breach &middot; owners notified via Teams</div></div>
+      <div class="tile kpi"><div class="l">Stale flags (&gt; 90 days at 100%)</div><div class="v">6</div><div class="d">Candidates for removal</div></div>
+    </div>
+    <div class="banner">&#9888; 2 flags are enabled in PROD without an approved change request. Approval flow started automatically.</div>
+    <div class="tile" style="padding:0">
+      <div class="th" style="padding:10px 14px 0"><h2>Active feature flags</h2><span class="caret">&#9662;</span><span class="spacer"></span>
+        <span class="tico">&#9635; Edit columns</span><span class="tico">&#9660; Edit filters</span><span class="viewhead"><span class="search" style="margin:0">&#128269; Filter by keyword</span></span></div>
+      <table>
+        <tr><th style="width:28px"><input type="checkbox"></th><th>Flag key</th><th>Service</th><th>DEV</th><th>UAT</th><th>PROD</th><th>Rollout</th><th>Guardrail</th><th>Owner</th><th>Last changed</th></tr>
+        <tr style="background:#f6eef7"><td><input type="checkbox" checked></td><td class="link">instant_payouts_v2</td><td>payouts-api</td><td><span class="tgl on"></span></td><td><span class="tgl on"></span></td><td><span class="tgl on"></span></td><td>25% of merchants</td><td><span class="pill green">Approved CR-4471</span></td><td>E. Moreau</td><td>15/09 05:40</td></tr>
+        <tr><td><input type="checkbox"></td><td class="link">kyc_auto_approve_low_risk</td><td>onboarding-svc</td><td><span class="tgl on"></span></td><td><span class="tgl on"></span></td><td><span class="tgl off"></span></td><td>Off in PROD</td><td><span class="pill amber">Awaiting compliance</span></td><td>S. Patel</td><td>14/09 17:12</td></tr>
+        <tr><td><input type="checkbox"></td><td class="link">refund_bulk_approval</td><td>refunds-svc</td><td><span class="tgl on"></span></td><td><span class="tgl on"></span></td><td><span class="tgl on"></span></td><td>Ops team only</td><td><span class="pill green">Approved CR-4462</span></td><td>D. Kaur</td><td>14/09 11:05</td></tr>
+        <tr><td><input type="checkbox"></td><td class="link">ledger_double_write</td><td>ledger-core</td><td><span class="tgl on"></span></td><td><span class="tgl on"></span></td><td><span class="tgl on"></span></td><td>100%</td><td><span class="pill red">No change request</span></td><td>M. Chen</td><td>14/09 09:31</td></tr>
+        <tr><td><input type="checkbox"></td><td class="link">fraud_model_v7_shadow</td><td>risk-engine</td><td><span class="tgl on"></span></td><td><span class="tgl on"></span></td><td><span class="tgl on"></span></td><td>Shadow mode</td><td><span class="pill green">Approved CR-4455</span></td><td>R. Okafor</td><td>13/09 22:48</td></tr>
+        <tr><td><input type="checkbox"></td><td class="link">card_3ds_step_up</td><td>payments-gw</td><td><span class="tgl on"></span></td><td><span class="tgl off"></span></td><td><span class="tgl off"></span></td><td>Off</td><td><span class="pill grey">Draft</span></td><td>T. Boyd</td><td>13/09 14:20</td></tr>
+        <tr><td><input type="checkbox"></td><td class="link">statements_new_ui</td><td>web-app</td><td><span class="tgl on"></span></td><td><span class="tgl on"></span></td><td><span class="tgl on"></span></td><td>50% of users</td><td><span class="pill red">No change request</span></td><td>A. Diaz</td><td>12/09 16:59</td></tr>
+        <tr><td><input type="checkbox"></td><td class="link">sepa_instant_rail</td><td>payments-gw</td><td><span class="tgl on"></span></td><td><span class="tgl on"></span></td><td><span class="tgl off"></span></td><td>Scheduled 18/09 09:00</td><td><span class="pill purple">Scheduled</span></td><td>E. Moreau</td><td>12/09 08:03</td></tr>
+      </table>
+      <div class="rows" style="padding:8px 14px">Rows: 8 of 63</div>
+    </div>
+  </div>
+  <aside class="side">
+    <h3>instant_payouts_v2</h3>
+    <div class="row"><div class="k">Service</div><div class="v">payouts-api</div></div>
+    <div class="row"><div class="k">PROD rollout</div><div class="v">25% of merchants <span class="slider"><span class="f"></span></span></div></div>
+    <div class="row"><div class="k">Audience</div><div class="v"><span class="pill purple">Tier-1 merchants</span> <span class="pill purple">EU only</span></div></div>
+    <div class="row"><div class="k">Change request</div><div class="v"><span class="pill green">CR-4471 approved</span></div></div>
+    <div class="row"><div class="k">Expires</div><div class="v">30/09/2026 &mdash; auto-disable</div></div>
+    <div class="row"><div class="k">Serving store</div><div class="v">LaunchDarkly &middot; synced 05:41 &#10003;</div></div>
+    <h3 style="margin-top:18px">Audit trail</h3>
+    <div class="audit"><b>E. Moreau</b> raised rollout 10% &#8594; 25%<br>15/09 05:40</div>
+    <div class="audit"><b>Approval flow</b> CR-4471 approved by SRE on-call<br>14/09 19:22</div>
+    <div class="audit"><b>E. Moreau</b> enabled in PROD (10%)<br>14/09 19:25</div>
+    <div class="audit"><b>M. Chen</b> enabled in UAT<br>11/09 10:14</div>
+  </aside>
+</div>
+</body></html>

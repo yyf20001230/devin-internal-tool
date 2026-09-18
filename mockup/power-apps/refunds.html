@@ -1,0 +1,124 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="common.css">
+<style>
+.kpis { display:grid; grid-template-columns: repeat(4,1fr); gap:12px; margin-bottom:12px; }
+.kpi .l { color:#616161; font-size:12px; } .kpi .v { font-size:26px; font-weight:600; margin-top:2px; } .kpi .d { font-size:12px; margin-top:2px; }
+.up { color:#a4262c; } .down { color:#0e700e; }
+.grid2 { display:grid; grid-template-columns: 1.35fr 1fr; gap:12px; margin-bottom:12px; }
+.bars { display:flex; align-items:flex-end; gap:12px; height:140px; padding:6px 4px 0; }
+.bar { flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; gap:6px; height:100%; }
+.bar .f { width:100%; border-radius:3px 3px 0 0; }
+.bar .x { font-size:11px; color:#616161; }
+.legend { display:flex; gap:16px; font-size:11.5px; color:#616161; margin-top:8px; }
+.sw { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:6px; }
+.hb { display:flex; align-items:center; gap:10px; margin-bottom:9px; font-size:12px; }
+.hb .n { width:126px; } .hb .t { flex:1; background:#f3f0f4; height:12px; border-radius:6px; overflow:hidden; } .hb .f { height:100%; } .hb .v { width:44px; text-align:right; color:#616161; }
+.filters { display:flex; gap:8px; align-items:center; margin:0 0 12px; }
+.chip { border:1px solid #c8c6c4; background:#fff; border-radius:14px; padding:4px 12px; font-size:12px; }
+.chip.on { background:#742774; color:#fff; border-color:#742774; }
+</style></head>
+<body>
+<div class="appbar">
+  <div class="left"><span class="waffle">&#8942;&#8942;&#8942;</span><span class="prod">Power Apps</span><span class="sep">|</span><span>Payments Operations</span></div>
+  <div class="search">&#128269; Search</div>
+  <div class="right">
+    <span class="env"><span>&#127970;</span><span><small>Environment</small>Fintech &ndash; PROD</span></span>
+    <span class="newlook">New look <span class="sw"></span></span>
+    <span>&#43;</span><span>&#9881;</span><span>?</span><span class="avatar">DK</span>
+  </div>
+</div>
+<div class="shell">
+  <nav class="nav">
+    <div class="hamb">&#9776;</div>
+    <a><span class="ico">&#8962;</span> Home</a>
+    <a class="active"><span class="ico">&#128202;</span> Refunds dashboard</a>
+    <a><span class="ico">&#9776;</span> Approval queue</a>
+    <a><span class="ico">&#8635;</span> Bulk reprocess</a>
+    <a><span class="ico">&#9873;</span> Chargeback watch</a>
+    <div class="divider"></div>
+    <div class="group">Reference</div>
+    <a><span class="ico">&#128179;</span> Transactions</a>
+    <a><span class="ico">&#128100;</span> Merchants</a>
+    <div class="divider"></div>
+    <a><span class="ico">&#8943;</span> More</a>
+  </nav>
+  <div class="main">
+    <div class="cmdbar">
+      <span class="cmd"><span class="ico">&#128190;</span> Save as</span>
+      <span class="cmd"><span class="ico">&#43;</span> New &#9662;</span>
+      <span class="cmd"><span class="ico">&#10003;</span> Set as default</span>
+      <span class="cmd"><span class="ico">&#8635;</span> Refresh all</span>
+      <span class="cmd"><span class="ico">&#9881;</span> Run daily digest (Flow)</span>
+      <span class="spacer"></span>
+      <button class="btn">Approve selected refunds</button>
+      <button class="btn sec">&#8599; Share</button>
+    </div>
+    <div class="viewhead"><h1>Refunds dashboard</h1><span class="caret">&#9662;</span><span class="spacer"></span><span class="tool">Data refreshed 06:25 UTC</span></div>
+    <div class="filters">
+      <span class="chip on">30 days</span><span class="chip">7 days</span><span class="chip">24 hours</span>
+      <span style="width:10px"></span>
+      <span class="chip">All rails</span><span class="chip on">Card</span><span class="chip">SEPA</span><span class="chip">ACH</span>
+      <span style="width:10px"></span><span class="chip">All merchants &#9662;</span>
+    </div>
+    <div class="kpis">
+      <div class="tile kpi"><div class="l">Refunds issued</div><div class="v">4,812</div><div class="d up">&#9650; 12.4% vs prior 30d</div></div>
+      <div class="tile kpi"><div class="l">Refund value</div><div class="v">&#163;1.74M</div><div class="d up">&#9650; 8.1% vs prior 30d</div></div>
+      <div class="tile kpi"><div class="l">Awaiting approval</div><div class="v">126</div><div class="d">38 over 24h SLA</div></div>
+      <div class="tile kpi"><div class="l">Avg time to refund</div><div class="v">6.2h</div><div class="d down">&#9660; 1.3h vs prior 30d</div></div>
+    </div>
+    <div class="grid2">
+      <div class="tile">
+        <div class="th"><h2>Refund value by day (&#163;k)</h2><span class="spacer"></span><span class="tico">&#8635; &#9635; &#8599;</span></div>
+        <div class="sub">Issued vs pending approval</div>
+        <div class="bars">
+          <div class="bar"><div class="f" style="height:38%;background:#742774"></div><div class="x">01</div></div>
+          <div class="bar"><div class="f" style="height:44%;background:#742774"></div><div class="x">04</div></div>
+          <div class="bar"><div class="f" style="height:35%;background:#742774"></div><div class="x">07</div></div>
+          <div class="bar"><div class="f" style="height:52%;background:#742774"></div><div class="x">10</div></div>
+          <div class="bar"><div class="f" style="height:61%;background:#742774"></div><div class="x">13</div></div>
+          <div class="bar"><div class="f" style="height:49%;background:#742774"></div><div class="x">16</div></div>
+          <div class="bar"><div class="f" style="height:70%;background:#742774"></div><div class="x">19</div></div>
+          <div class="bar"><div class="f" style="height:58%;background:#742774"></div><div class="x">22</div></div>
+          <div class="bar"><div class="f" style="height:84%;background:#742774"></div><div class="x">25</div></div>
+          <div class="bar"><div class="f" style="height:66%;background:#742774"></div><div class="x">28</div></div>
+          <div class="bar"><div class="f" style="height:47%;background:#c9a3cb"></div><div class="x">30</div></div>
+        </div>
+        <div class="legend"><span><span class="sw" style="background:#742774"></span>Issued</span><span><span class="sw" style="background:#c9a3cb"></span>Pending approval</span></div>
+      </div>
+      <div class="tile">
+        <div class="th"><h2>Top refund reasons</h2><span class="spacer"></span><span class="tico">&#8635; &#9635; &#8599;</span></div>
+        <div class="sub">Count, last 30 days</div>
+        <div class="hb"><span class="n">Duplicate charge</span><span class="t"><span class="f" style="width:86%;background:#5b9bd5"></span></span><span class="v">1,412</span></div>
+        <div class="hb"><span class="n">Item not received</span><span class="t"><span class="f" style="width:64%;background:#70ad47"></span></span><span class="v">1,047</span></div>
+        <div class="hb"><span class="n">Fraud &ndash; confirmed</span><span class="t"><span class="f" style="width:41%;background:#d9824b"></span></span><span class="v">668</span></div>
+        <div class="hb"><span class="n">Subscription cancel</span><span class="t"><span class="f" style="width:33%;background:#b366c9"></span></span><span class="v">540</span></div>
+        <div class="hb"><span class="n">Pricing error</span><span class="t"><span class="f" style="width:22%;background:#5a7d3a"></span></span><span class="v">361</span></div>
+        <div class="hb"><span class="n">Goodwill</span><span class="t"><span class="f" style="width:14%;background:#9c9c9c"></span></span><span class="v">228</span></div>
+      </div>
+    </div>
+    <div class="tile" style="padding:0">
+      <div class="th" style="padding:10px 14px 0"><h2>Refunds awaiting approval (over &#163;500)</h2><span class="caret">&#9662;</span><span class="spacer"></span><span class="tico">&#8942;</span></div>
+      <table>
+        <tr><th style="width:28px"><input type="checkbox"></th><th>Refund</th><th>Merchant</th><th>Amount</th><th>Rail</th><th>Reason</th><th>Risk</th><th>Age</th><th>Requested by</th></tr>
+        <tr><td><input type="checkbox"></td><td class="link">RFD-88231</td><td>Lumen Retail</td><td>&#163;4,280.00</td><td>Card</td><td>Duplicate charge</td><td><span class="pill amber">Review</span></td><td><span class="pill red">31h</span></td><td>Support &ndash; T. Boyd</td></tr>
+        <tr><td><input type="checkbox"></td><td class="link">RFD-88227</td><td>Northwind Air</td><td>&#163;2,915.50</td><td>SEPA</td><td>Item not received</td><td><span class="pill green">Low</span></td><td>18h</td><td>Auto rule</td></tr>
+        <tr><td><input type="checkbox"></td><td class="link">RFD-88219</td><td>Sable Payments</td><td>&#163;1,760.00</td><td>Card</td><td>Fraud &ndash; confirmed</td><td><span class="pill red">High</span></td><td><span class="pill red">26h</span></td><td>Fraud ops</td></tr>
+        <tr><td><input type="checkbox"></td><td class="link">RFD-88204</td><td>Contoso Energy</td><td>&#163;980.25</td><td>ACH</td><td>Pricing error</td><td><span class="pill green">Low</span></td><td>7h</td><td>Billing</td></tr>
+      </table>
+    </div>
+  </div>
+  <aside class="copilot">
+    <div class="head"><span class="logo"></span> Copilot</div>
+    <div class="tab">Chat</div>
+    <div class="intro">Ready to explore? Select one of the suggestions below to get started...</div>
+    <div class="sugg"><b>Analyze</b>Why did <span>[refund value]</span> spike on the 25th?</div>
+    <div class="sugg"><b>Act</b>Navigate to <span>[Approval queue]</span></div>
+    <div class="sugg"><b>Analyze</b>Which <span>[merchants]</span> have the highest refund rate this month?</div>
+    <div class="sugg"><b>Act</b>Draft a Teams message to <span>[Fraud ops]</span> about RFD-88219</div>
+    <div class="note">You can ask questions about these tables and their records: Refunds, Transactions, Merchants, Refund Reasons, Approvals.</div>
+    <div class="spacer"></div>
+    <div class="prompt">Ask a question about the data in the app. Use / to reference data<span class="send">&#10148;</span></div>
+    <div class="foot">Make sure AI-generated content is accurate and appropriate before using. <u>See terms</u></div>
+  </aside>
+</div>
+</body></html>

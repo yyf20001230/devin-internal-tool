@@ -1,0 +1,112 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="common.css">
+<style>
+.top { display:grid; grid-template-columns: 1fr 1fr 1.1fr; gap:12px; margin-bottom:12px; }
+.donut { width:110px; height:110px; border-radius:50%; margin:6px auto 4px;
+  background: conic-gradient(#c4314b 0 34%, #e0a12a 34% 62%, #4f9d4f 62% 100%); position:relative; }
+.donut:after { content:"142"; position:absolute; inset:28px; background:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:600; font-size:16px; }
+.legend { display:flex; gap:12px; justify-content:center; font-size:11.5px; color:#616161; }
+.sw { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; }
+.hb { display:flex; align-items:center; gap:8px; font-size:12px; margin-bottom:8px; }
+.hb .n { width:118px; } .hb .t { flex:1; height:12px; background:#f3f0f4; border-radius:6px; overflow:hidden; } .hb .f { height:100%; background:#742774; } .hb .v { width:26px; text-align:right; color:#616161; }
+.kpis { display:grid; grid-template-columns: repeat(2,1fr); gap:10px; }
+.kpi .l { color:#616161; font-size:11.5px; } .kpi .v { font-size:22px; font-weight:600; } .kpi .d { font-size:11.5px; }
+.bad { color:#a4262c; } .good { color:#0e700e; }
+</style></head>
+<body>
+<div class="appbar">
+  <div class="left"><span class="waffle">&#8942;&#8942;&#8942;</span><span class="prod">Power Apps</span><span class="sep">|</span><span>Compliance Operations</span></div>
+  <div class="search">&#128269; Search</div>
+  <div class="right">
+    <span class="env"><span>&#127970;</span><span><small>Environment</small>Fintech &ndash; PROD</span></span>
+    <span class="newlook">New look <span class="sw"></span></span>
+    <span>&#43;</span><span>&#9881;</span><span>?</span><span class="avatar">JR</span>
+  </div>
+</div>
+<div class="shell">
+  <nav class="nav">
+    <div class="hamb">&#9776;</div>
+    <a><span class="ico">&#8962;</span> Home</a>
+    <a class="active"><span class="ico">&#9776;</span> KYC review queue</a>
+    <a><span class="ico">&#9873;</span> Escalations</a>
+    <a><span class="ico">&#9878;</span> Sanctions hits</a>
+    <a><span class="ico">&#9993;</span> Info requests</a>
+    <div class="divider"></div>
+    <div class="group">Reference</div>
+    <a><span class="ico">&#128100;</span> Customers</a>
+    <a><span class="ico">&#128196;</span> Documents</a>
+    <a><span class="ico">&#128202;</span> Analyst SLA</a>
+    <div class="divider"></div>
+    <a><span class="ico">&#8943;</span> More</a>
+  </nav>
+  <div class="main">
+    <div class="cmdbar">
+      <span class="cmd"><span class="ico">&#43;</span> New case</span>
+      <span class="cmd"><span class="ico">&#8635;</span> Refresh all</span>
+      <span class="cmd"><span class="ico">&#10003;</span> Approve</span>
+      <span class="cmd"><span class="ico">&#10007;</span> Reject</span>
+      <span class="cmd"><span class="ico">&#8593;</span> Escalate to EDD</span>
+      <span class="cmd"><span class="ico">&#9881;</span> Request documents (Flow)</span>
+      <span class="spacer"></span>
+      <button class="btn sec">Assign to me</button>
+      <button class="btn">&#8599; Share</button>
+    </div>
+    <div class="viewhead"><h1>KYC review queue</h1><span class="caret">&#9662;</span></div>
+
+    <div class="top">
+      <div class="tile">
+        <div class="th"><h2>Open cases by risk</h2><span class="spacer"></span><span class="tico">&#8635; &#9635; &#8599;</span></div>
+        <div class="sub">Pending, docs requested and EDD</div>
+        <div class="donut"></div>
+        <div class="legend"><span><span class="sw" style="background:#c4314b"></span>High 48</span><span><span class="sw" style="background:#e0a12a"></span>Medium 40</span><span><span class="sw" style="background:#4f9d4f"></span>Low 54</span></div>
+      </div>
+      <div class="tile">
+        <div class="th"><h2>Queue by analyst</h2><span class="spacer"></span><span class="tico">&#8635; &#9635; &#8599;</span></div>
+        <div class="sub">Open cases assigned</div>
+        <div class="hb"><span class="n">J. Rivera</span><span class="t"><span class="f" style="width:88%"></span></span><span class="v">31</span></div>
+        <div class="hb"><span class="n">S. Patel</span><span class="t"><span class="f" style="width:74%"></span></span><span class="v">26</span></div>
+        <div class="hb"><span class="n">M. Kaur</span><span class="t"><span class="f" style="width:60%"></span></span><span class="v">21</span></div>
+        <div class="hb"><span class="n">A. Diaz</span><span class="t"><span class="f" style="width:46%"></span></span><span class="v">16</span></div>
+        <div class="hb"><span class="n">Unassigned</span><span class="t"><span class="f" style="width:100%; background:#c4314b"></span></span><span class="v">48</span></div>
+      </div>
+      <div class="tile">
+        <div class="th"><h2>SLA today</h2><span class="spacer"></span><span class="tico">&#8635; &#9635; &#8599;</span></div>
+        <div class="kpis">
+          <div class="kpi"><div class="l">Breached</div><div class="v bad">7</div><div class="d bad">&#9650; 3 vs yesterday</div></div>
+          <div class="kpi"><div class="l">Due in &lt; 4h</div><div class="v">19</div><div class="d">12 high risk</div></div>
+          <div class="kpi"><div class="l">Approved today</div><div class="v good">64</div><div class="d">avg 2.4h handle</div></div>
+          <div class="kpi"><div class="l">Auto-approved</div><div class="v">38%</div><div class="d">low-risk rule</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tile" style="padding:0">
+      <div class="th" style="padding:10px 14px 0"><h2>Pending KYC &ndash; assigned to me</h2><span class="caret">&#9662;</span><span class="spacer"></span>
+        <span class="tico">&#9635; Edit columns</span><span class="tico">&#9660; Edit filters</span><span class="viewhead"><span class="search" style="margin:0">&#128269; Filter by keyword</span></span></div>
+      <table>
+        <tr><th style="width:28px"><input type="checkbox"></th><th>Case &#8964;</th><th>Applicant</th><th>Type</th><th>Risk score</th><th>Sanctions / PEP</th><th>Docs</th><th>Status</th><th>SLA left</th><th>Submitted</th></tr>
+        <tr><td><input type="checkbox"></td><td class="link">KYC-10482</td><td>Meridian Capital Ltd</td><td>Business</td><td><span class="pill red">87 &middot; High</span></td><td><span class="pill red">PEP match (2)</span></td><td>4 of 5</td><td><span class="pill amber">Pending review</span></td><td><span class="pill red">2h 10m</span></td><td>15/09/2026 04:12</td></tr>
+        <tr><td><input type="checkbox"></td><td class="link">KYC-10481</td><td>Amara Osei</td><td>Individual</td><td><span class="pill amber">64 &middot; Medium</span></td><td><span class="pill grey">No match</span></td><td>3 of 3</td><td><span class="pill amber">Pending review</span></td><td>9h 40m</td><td>15/09/2026 03:55</td></tr>
+        <tr><td><input type="checkbox"></td><td class="link">KYC-10479</td><td>Northgate Freight GmbH</td><td>Business</td><td><span class="pill red">91 &middot; High</span></td><td><span class="pill amber">Adverse media</span></td><td>2 of 5</td><td><span class="pill purple">Docs requested</span></td><td>1d 4h</td><td>14/09/2026 21:03</td></tr>
+        <tr><td><input type="checkbox"></td><td class="link">KYC-10477</td><td>Liang Wei</td><td>Individual</td><td><span class="pill green">22 &middot; Low</span></td><td><span class="pill grey">No match</span></td><td>3 of 3</td><td><span class="pill amber">Pending review</span></td><td>1d 9h</td><td>14/09/2026 18:47</td></tr>
+        <tr><td><input type="checkbox"></td><td class="link">KYC-10475</td><td>Sable Payments Inc</td><td>Business</td><td><span class="pill amber">58 &middot; Medium</span></td><td><span class="pill grey">No match</span></td><td>5 of 5</td><td><span class="pill purple">In EDD</span></td><td>2d 2h</td><td>14/09/2026 11:20</td></tr>
+        <tr><td><input type="checkbox"></td><td class="link">KYC-10470</td><td>Helena Brandt</td><td>Individual</td><td><span class="pill red">79 &middot; High</span></td><td><span class="pill red">Sanctions (1)</span></td><td>3 of 4</td><td><span class="pill red">Escalated</span></td><td><span class="pill red">Breached</span></td><td>13/09/2026 16:02</td></tr>
+        <tr><td><input type="checkbox"></td><td class="link">KYC-10461</td><td>Tomas Nowak</td><td>Individual</td><td><span class="pill amber">49 &middot; Medium</span></td><td><span class="pill grey">No match</span></td><td>1 of 3</td><td><span class="pill purple">Docs requested</span></td><td>3d 1h</td><td>12/09/2026 14:18</td></tr>
+      </table>
+      <div class="rows" style="padding:8px 14px">Rows: 7 of 31</div>
+    </div>
+  </div>
+  <aside class="copilot">
+    <div class="head"><span class="logo"></span> Copilot</div>
+    <div class="tab">Chat</div>
+    <div class="answer"><b>You asked:</b> which of my cases breach SLA in the next 4 hours?<br><br>3 cases: <span style="color:#742774">KYC-10482</span> (2h 10m, PEP match), <span style="color:#742774">KYC-10481</span> (9h 40m), <span style="color:#742774">KYC-10470</span> (already breached, escalated). Want me to open the first one?</div>
+    <div class="sugg"><b>Analyze</b>How many <span>[KYC cases]</span> are high risk and unassigned?</div>
+    <div class="sugg"><b>Act</b>Navigate to <span>[Sanctions hits]</span></div>
+    <div class="sugg"><b>Analyze</b>Summarise the documents on <span>[KYC-10479]</span></div>
+    <div class="note">You can ask questions about these tables and their records: KYC Cases, Applicants, Documents, Screening Results, Analysts.</div>
+    <div class="spacer"></div>
+    <div class="prompt">Ask a question about the data in the app. Use / to reference data<span class="send">&#10148;</span></div>
+    <div class="foot">Make sure AI-generated content is accurate and appropriate before using. <u>See terms</u></div>
+  </aside>
+</div>
+</body></html>
