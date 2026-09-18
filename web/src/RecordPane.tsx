@@ -137,14 +137,15 @@ function Switches({ tool, actions, record, actionEnabled, onAction }: { tool: To
 }
 
 function Decisions({ tool, actions, record, actionEnabled, onAction }: { tool: ToolSpec; actions: ActionSpec[]; record: Rec; actionEnabled: (a: ActionSpec, r: Rec) => boolean; onAction: (a: ActionSpec, r: Rec) => void }) {
-  // A slot shows when the record is in a state where that decision applies; it is greyed only when the
-  // viewer lacks the role, so "nothing to approve here" and "you can't approve this" look different.
+  // A slot shows when the record is in a state where that decision applies. Policy (four-eyes role,
+  // failing checks) does not grey the button - the action flow warns first and audits the override.
+  // Only a role with no right to act at all (e.g. read-only) sees it disabled.
   const slots = DECISIONS.map(d => {
     const all = actions.filter(a => a.decision === d.kind && stateAllows(a, record))
     if (!all.length) return null
     const a = all.find(x => x.allowed) ?? all[0]
     const enabled = actionEnabled(a, record)
-    const why = enabled ? '' : `Requires role: ${a.roles.join(' / ')}`
+    const why = enabled ? '' : `Read-only for your role (${a.roles.join(' / ')} may decide)`
     return { ...d, a, enabled, why }
   }).filter((s): s is NonNullable<typeof s> => s !== null)
   const switched = new Set(actions.flatMap(a => Object.entries(a.set).filter(([k, v]) => typeof v === 'boolean' && tool.fields.some(f => f.name === k && f.type === 'boolean')).map(([k]) => k)))
@@ -318,17 +319,12 @@ export function RecordPane({ tool, record, actions, actionEnabled, onAction, onC
             <Icon name="book" />
             <span>Policy checks</span>
             {review && <span className={`pill ${pillColour(review.verdict)}`}>{review.verdict}</span>}
+            <span className="spacer" />
+            {review && <span className="sub">{review.checks.filter(c => c.passed).length}/{review.checks.length} passed</span>}
           </div>
           {!review && <div className="sub">Running checks…</div>}
           {review?.checks.map(c => <Check key={c.id} c={c} />)}
-          {review && (
-            <div className="sub" style={{ marginTop: 6 }}>
-              {review.verdict === 'Cleared' && 'All checks passed — eligible for automatic clearance.'}
-              {review.verdict === 'Flagged' && 'A mandatory control failed — automation escalates, a lead decides.'}
-              {review.verdict === 'Needs review' && 'Automation settled everything it could; the remaining checks need a human.'}
-              {' Click a check to read the clause.'}
-            </div>
-          )}
+          {review && <div className="sub" style={{ marginTop: 6 }}>Click a check for the values it was judged on and the clause text.</div>}
         </section>
       )}
 

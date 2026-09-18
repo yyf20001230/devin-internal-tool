@@ -59,6 +59,9 @@ def build_app(tools_dir: Path = TOOLS_DIR, db_path: Path | str = DB_PATH,
         for c in spec.checks:
             if knowledge.clause(c.clause) is None:
                 raise ValueError(f"{spec.id}: check '{c.id}' cites unknown clause {c.clause}")
+        for a in spec.actions:
+            if a.four_eyes and knowledge.clause(a.four_eyes.clause) is None:
+                raise ValueError(f"{spec.id}: action '{a.id}' cites unknown clause {a.four_eyes.clause}")
 
     app = FastAPI(title="Internal Tools Platform")
     app.state.engine = engine
@@ -176,6 +179,14 @@ def build_app(tools_dir: Path = TOOLS_DIR, db_path: Path | str = DB_PATH,
     def action(action_id: str, body: ActionBody, spec: ToolSpec = Depends(tool),
                user: User = Depends(current_user)):
         return engine.run_action(spec, user, action_id, body.record_id, body.comment)
+
+    @app.get("/api/tools/{tool_id}/actions/{action_id}/preview")
+    def action_preview(action_id: str, record_id: int, spec: ToolSpec = Depends(tool),
+                       user: User = Depends(current_user)):
+        """Policy clauses the caller would override by running the action now - shown as a warning before it runs."""
+        res = engine.action_preview(spec, user, action_id, record_id)
+        cite(res["overrides"])
+        return res
 
     @app.get("/api/tools/{tool_id}/records/{rid}/review")
     def record_review(rid: int, spec: ToolSpec = Depends(tool), user: User = Depends(current_user)):

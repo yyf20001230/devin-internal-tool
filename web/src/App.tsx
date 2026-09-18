@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AIStatus, ActionSpec, AutoReviewResult, FieldSpec, IntegrationEntry, Me, QueryResult, Rec, TileSpec, ToolSpec, User } from './api'
+import type { AIStatus, ActionSpec, AutoReviewResult, FieldSpec, IntegrationEntry, Me, Override, QueryResult, Rec, TileSpec, ToolSpec, User } from './api'
 import { ApiError, api, fmt, getUser, matches, signIn, signOut, stateAllows } from './api'
 import { Cell, isNumeric } from './Cell'
 import { Dashboard } from './Dashboard'
@@ -7,7 +7,7 @@ import { Icon, actionIcon } from './Icon'
 import { PolicyReport } from './PolicyReport'
 import { RecordPane } from './RecordPane'
 
-type Pending = { action: ActionSpec; record: Rec; comment: string }
+type Pending = { action: ActionSpec; record: Rec; comment: string; overrides: Override[] }
 type Sort = { field: string; dir: 'asc' | 'desc' } | null
 
 const APP_BLURB: Record<string, string> = {
@@ -153,8 +153,17 @@ export default function App() {
 
   const actionEnabled = useCallback((a: ActionSpec, r: Rec) => a.allowed && stateAllows(a, r), [])
 
-  function startAction(a: ActionSpec, r: Rec) {
-    if (a.requires_comment || a.confirm) setPending({ action: a, record: r, comment: '' })
+  // Decisions are always clickable. Before a decision runs, the server says which policy clauses the
+  // user would be overriding (four-eyes role, checks still failing after approval); if any, the modal
+  // warns and asks to proceed. Comment / confirm prompts still apply.
+  async function startAction(a: ActionSpec, r: Rec) {
+    if (!tool) return
+    let overrides: Override[] = []
+    if (a.decision) {
+      try { overrides = (await api.actionPreview(tool.id, a.id, r.id)).overrides }
+      catch (e) { toast((e as Error).message, true); return }
+    }
+    if (overrides.length || a.requires_comment || a.confirm) setPending({ action: a, record: r, comment: '', overrides })
     else runAction(a, r, null)
   }
 
@@ -238,7 +247,6 @@ export default function App() {
   if (!authed) return <SignIn users={users} onSignIn={id => { signIn(id); setAuthed(true) }} />
 
   const initials = me?.user.name.split(' ').map(s => s[0]).join('').slice(0, 2) ?? ''
-  const prodWarn = tool?.id === 'flags' ? tiles.find(t => t.title.startsWith('PROD on without'))?.value ?? 0 : 0
 
   return (
     <div className="shell">
@@ -315,9 +323,6 @@ export default function App() {
           <div className={`content ${paneOpen ? '' : 'no-pane'}`}>
             <div>
               {tool && <Dashboard tiles={tiles} />}
-              {prodWarn > 0 && (
-                <div className="banner"><Icon name="alert" />{prodWarn} flag(s) are on in PROD without an approved change request. Policy requires a CR before PROD enablement.</div>
-              )}
               {autoResult && tool && (
                 <PolicyReport result={autoResult} rows={rows} onClose={() => setAutoResult(null)}
                   onResetAll={tool.can.update ? resetAllAI : null}
@@ -378,8 +383,8 @@ export default function App() {
                 <div className="tile" style={{ marginTop: 12 }}>
                   <div className="h"><span>Outbound integrations</span></div>
                   {integrations.slice(0, 5).map(i => (
-                    <div key={i.id} style={{ fontSize: 12, padding: '3px 0' }}>
-                      <span className="pill green">sent</span> {fmt.dt(i.ts)} · <code>{i.webhook.replace('https://hooks.internal', '')}</code> · {String(i.payload.action)} on <b>{String(i.payload.title)}</b> by {String(i.payload.by)}
+                    <div key={i.id} className="sub" style={{ padding: '3px 0' }}>
+                      {fmt.dt(i.ts)} · <code>{i.webhook.replace('https://hooks.internal', '')}</code> · {String(i.payload.action)} on <b>{String(i.payload.title)}</b> by {String(i.payload.by)}
                     </div>
                   ))}
                 </div>
@@ -397,6 +402,19 @@ export default function App() {
         <div className="modal-bg" onClick={() => setPending(null)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h3><Icon name={actionIcon(pending.action.id, pending.action.icon, pending.action.destructive)} />{pending.action.label} — {String(pending.record[tool!.title_field])}</h3>
+            {pending.overrides.length > 0 && (
+              <div className="warn">
+                <div className="warn-head"><Icon name="alert" />Policy warning — this decision goes against {pending.overrides.length === 1 ? 'a clause' : `${pending.overrides.length} clauses`}</div>
+                {pending.overrides.map(o => (
+                  <div key={o.clause} className="warn-item">
+                    <b>{o.clause}</b> {o.title}
+                    <div className="sub">{o.detail}</div>
+                    {o.clause_text && <div className="sub clause">“{o.clause_text}”</div>}
+                  </div>
+                ))}
+                <div className="sub">You can proceed; the override and your name are written to the audit trail.</div>
+              </div>
+            )}
             {pending.action.confirm && <div>{pending.action.confirm}</div>}
             {pending.action.requires_comment && (
               <textarea placeholder="Comment (required, written to the audit trail)" value={pending.comment} autoFocus
@@ -405,7 +423,7 @@ export default function App() {
             <div className="acts">
               <button className="btn secondary" onClick={() => setPending(null)}>Cancel</button>
               <button className={`btn ${pending.action.destructive ? 'danger' : ''}`} disabled={pending.action.requires_comment && !pending.comment.trim()}
-                onClick={() => runAction(pending.action, pending.record, pending.comment || null)}>{pending.action.label}</button>
+                onClick={() => runAction(pending.action, pending.record, pending.comment || null)}>{pending.overrides.length ? `${pending.action.label} anyway` : pending.action.label}</button>
             </div>
           </div>
         </div>

@@ -8,10 +8,13 @@ export interface FieldSpec {
 }
 export interface ViewSpec { id: string; name: string; filter: Filter; columns: string[]; sort: string | null; mine: boolean }
 export interface ActionSpec {
-  id: string; label: string; roles: string[]; set: Record<string, unknown>; only_when: Filter
+  id: string; label: string; roles: string[]; four_eyes: { roles: string[]; clause: string } | null
+  set: Record<string, unknown>; only_when: Filter
   requires_comment: boolean; confirm: string | null; webhook: string | null; destructive: boolean; icon: string | null
   decision: 'approve' | 'reject' | 'info' | null; allowed: boolean
 }
+// A policy clause the user would be overriding by running an action (shown as a warning first).
+export interface Override { clause: string; title: string; detail: string; clause_title: string; clause_text: string; policy: string | null }
 
 // Client-side mirror of the server's filter evaluation, used for view membership and action guards.
 export function matches(cond: unknown, v: unknown): boolean {
@@ -118,6 +121,7 @@ export const api = {
   update: (id: string, rid: number, values: Record<string, unknown>) => req<Rec>(`/api/tools/${id}/records/${rid}`, { method: 'PATCH', body: JSON.stringify(values) }),
   action: (id: string, action: string, rid: number, comment: string | null) =>
     req<Rec>(`/api/tools/${id}/actions/${action}`, { method: 'POST', body: JSON.stringify({ record_id: rid, comment }) }),
+  actionPreview: (id: string, action: string, rid: number) => req<{ overrides: Override[] }>(`/api/tools/${id}/actions/${action}/preview?record_id=${rid}`),
   dashboard: (id: string) => req<TileSpec[]>(`/api/tools/${id}/dashboard`),
   audit: (id: string, rid?: number) => req<AuditEntry[]>(`/api/tools/${id}/audit${rid ? `?record_id=${rid}` : ''}`),
   integrations: (id: string) => req<IntegrationEntry[]>(`/api/tools/${id}/integrations`),

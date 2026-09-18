@@ -43,7 +43,7 @@ a { color: var(--accent); }
 .appbar .brand b { font-weight: 600; }
 .appbar .brand .crumb { color: var(--muted); }
 .icon { flex: none; vertical-align: -3px; }
-.icon.dim { color: var(--faint); }
+.icon.dim, .dim { color: var(--faint); }
 .icon.green, .green { color: var(--green); }
 .icon.amber, .amber { color: var(--amber); }
 .icon.red, .red { color: var(--red); }
@@ -179,15 +179,15 @@ td .link { color: var(--text); font-weight: 600; }
 .dotted .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
 .dotted.green .dot { background: var(--green); } .dotted.amber .dot { background: var(--amber); } .dotted.red .dot { background: var(--red); }
 .dotted.blue .dot { background: var(--blue); } .dotted.purple .dot { background: var(--purple); }
-.dotted.red { color: var(--text); }
+.dotted.off { color: var(--faint); } .dotted.off .dot { background: var(--line-strong); }
 .purple { color: var(--purple); } .blue { color: var(--blue); }
 .masked { color: var(--faint); letter-spacing: 1px; }
 .tgl { width: 34px; height: 18px; border-radius: 9px; display: inline-block; position: relative; vertical-align: -4px; background: var(--line-strong); }
 .tgl.on { background: var(--green); }
 .tgl::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s; }
 .tgl.on::after { left: 18px; }
-.overdue { color: var(--red); font-weight: 600; }
-.soon { color: var(--amber); font-weight: 600; }
+.overdue { color: var(--red); }
+.soon { color: var(--amber); }
 .empty { padding: 30px; text-align: center; color: var(--muted); }
 
 /* ---- side pane ---- */
@@ -271,8 +271,6 @@ td .link { color: var(--text); font-weight: 600; }
 .rep-row .link:hover { text-decoration: underline; }
 .chev { color: var(--muted); transition: transform .15s; transform: rotate(-90deg); }
 .chev.open { transform: rotate(0); }
-.ev { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .3px; }
-.ev.green { color: var(--green); } .ev.red { color: var(--red); }
 .ev-vals code { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; margin-right: 4px; color: var(--text); font-size: 11px; }
 .ev-rule { color: var(--muted); font-size: 11px; font-family: ui-monospace, monospace; }
 .details dl { margin: 0; display: grid; grid-template-columns: 1fr; gap: 2px; }
@@ -314,5 +312,11 @@ td .link { color: var(--text); font-weight: 600; }
 .modal p { color: var(--text-2); }
 .modal textarea { width: 100%; min-height: 70px; border: 1px solid var(--line-strong); background: var(--bg); color: var(--text); border-radius: 5px; padding: 6px; margin: 10px 0; }
 .modal .acts { display: flex; justify-content: flex-end; gap: 8px; }
+.warn { background: rgba(217,160,33,.08); border: 1px solid rgba(217,160,33,.4); border-radius: 6px; padding: 10px 12px; margin: 6px 0 12px; font-size: 12px; display: flex; flex-direction: column; gap: 8px; }
+.warn-head { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--text); }
+.warn-head .icon { color: var(--amber); }
+.warn-item b { font-family: ui-monospace, monospace; font-size: 11px; color: var(--amber); margin-right: 4px; }
+.warn .sub { color: var(--muted); margin-top: 2px; }
+.warn .sub.clause { color: var(--text-2); font-style: italic; }
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--bg-3); border: 1px solid var(--line-strong); color: var(--text); padding: 10px 16px; border-radius: 6px; z-index: 20; }
 .toast.err { background: rgba(240,82,79,.2); border-color: var(--red); }

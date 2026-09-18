@@ -63,10 +63,18 @@ class ViewSpec(BaseModel):
     mine: bool = False  # restrict to records where assignee == current user
 
 
+class FourEyes(BaseModel):
+    """The role a policy clause expects to take this decision. Anyone in `roles` may still run the
+    action; acting outside `four_eyes.roles` is warned about in the UI and recorded in the audit trail."""
+    roles: list[str]
+    clause: str
+
+
 class ActionSpec(BaseModel):
     id: str
     label: str
     roles: list[str]
+    four_eyes: FourEyes | None = None
     set: dict[str, object] = {}
     only_when: Filter = {}
     requires_comment: bool = False

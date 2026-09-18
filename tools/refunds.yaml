@@ -55,6 +55,9 @@ views:
     columns: [refund_id, merchant, amount, reason, status, requested_at]
     sort: requested_at desc
 
+# Decisions are always clickable for anyone on the board. RF-1.2 (finance sign-off over 1,000) is
+# advisory at the button: ops approving a large refund gets a policy warning, and the override is
+# written to the audit trail with the justification comment.
 actions:
   - id: approve
     decision: approve
@@ -65,13 +68,14 @@ actions:
     set: {status: Approved}
   - id: approve_large
     decision: approve
-    label: Approve (finance)
+    label: Approve
     icon: check
-    roles: [finance]
+    roles: [payments_ops, finance]
+    four_eyes: {roles: [finance], clause: RF-1.2}
     only_when: {status: Awaiting approval, amount: {gte: 1000}}
     set: {status: Approved}
     requires_comment: true
-    confirm: This refund is over the ops limit and needs finance sign-off. Approve?
+    confirm: This refund is 1,000 or more, so policy asks for finance sign-off with a written justification.
   - id: request_info
     decision: info
     label: Request more info
@@ -143,13 +147,11 @@ auto_review:
   clear_action: auto_approve
 
 dashboard:
-  - {type: kpi, title: Refund value (30d), metric: sum, field: amount, format: money, filter: {requested_at: {gte: now-30d}}}
-  - {type: kpi, title: Refunds requested (30d), filter: {requested_at: {gte: now-30d}}}
   - {type: kpi, title: Awaiting approval, filter: {status: Awaiting approval}}
   - {type: kpi, title: Awaiting value, metric: sum, field: amount, format: money, filter: {status: Awaiting approval}}
+  - {type: kpi, title: Refund value (30d), metric: sum, field: amount, format: money, filter: {requested_at: {gte: now-30d}}}
   - {type: series, title: Refund value by day, metric: sum, field: amount, date_field: requested_at, days: 14, chart: bar, format: money}
-  - {type: group, title: Top refund reasons (30d), field: reason, chart: hbar, filter: {requested_at: {gte: now-30d}}}
-  - {type: group, title: Value by rail (30d), field: rail, metric: sum, value_field: amount, chart: donut, format: money, filter: {requested_at: {gte: now-30d}}}
+  - {type: group, title: Refund value by reason (30d), field: reason, metric: sum, value_field: amount, format: money, chart: hbar, filter: {requested_at: {gte: now-30d}}}
 
 permissions:
   read: [payments_ops, finance, readonly]
