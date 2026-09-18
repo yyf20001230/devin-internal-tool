@@ -425,4 +425,5 @@ test fails if a signing key appears in a tracked file.
 | Secrets store | `.env.example` (names), `os.environ` (reads) | Connection references / Key Vault |
 
 See `docs/EVALUATION.md` for the build-vs-buy assessment and `docs/COST_COMPARISON.md` for the
-annual cost of Power Apps vs this platform at 1,000 users.
+annual cost of Power Apps (current $250k/yr spend) vs this platform at 700 active users, and how the
+per-board images scale.
