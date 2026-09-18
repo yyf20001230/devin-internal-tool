@@ -357,49 +357,6 @@ make minikube TOOL=chargebacks && make forward TOOL=chargebacks
 
 opens it at http://localhost:8084.
 
-For a new tool `payouts` (after `/new-tool` has created `tools/payouts.yaml`):
-
-1. `cp -r deploy/k8s/overlays/chargebacks deploy/k8s/overlays/payouts` and in the new
-   `kustomization.yaml` replace `chargebacks` with `payouts` (nameSuffix, instance label, image
-   name, `TOOLS` value) and pick an unused NodePort (`30085`).
-2. In the `Makefile` add `LOCAL_PORT_payouts ?= 8085`; optionally add `payouts` to `SPLIT_TOOLS`
-   so `make split*` includes it.
-3. `make minikube TOOL=payouts` → builds `internal-tools-payouts:dev` (`docker build --build-arg TOOLS=payouts`),
-   loads it into minikube, deploys its Deployment/Service/PVC. `make forward TOOL=payouts` opens it.
-
-No Python or TypeScript changes: the build arg drives `deploy/select_tools.py`, and the server
-loads/seeds whatever `TOOLS` names. One image can also serve several boards
-(`docker build --build-arg TOOLS=kyc,refunds …`) if you want a "compliance + payments" cut.
-
-### Make targets
-
-Every target takes `TOOL=all|kyc|refunds|flags|chargebacks` (default `all`); the `split-*` variants
-run the same target for each tool in `SPLIT_TOOLS` (`kyc refunds flags`):
-
-| Target | What it does |
-|---|---|
-| `make image` / `make split-image` | `docker build --build-arg TOOLS=…` + `minikube image load` (no registry). Docker Hub rate-limiting you? add `BASE_REGISTRY=mirror.gcr.io/library` |
-| `make deploy` / `make split-deploy` | `kubectl apply -k deploy/k8s/overlays/$TOOL` and wait for the rollout |
-| `make redeploy` / `make split-redeploy` | after a code change: rebuild the image(s) and roll the pod(s) |
-| `make secret` | creates/updates the `internal-tools-secrets` Secret (shared by all instances) from `OPENAI_API_KEY` / `WEBHOOK_SIGNING_SECRET` in your shell and restarts the pods |
-| `make forward` / `make split-forward` / `make unforward` | `kubectl port-forward` to http://localhost:8080 (8081/8082/8083 per tool) |
-| `make reseed` / `make split-reseed` | wipes the SQLite file on the volume and restarts → fresh demo data |
-| `make status` / `make logs` / `make url` / `make urls` | inspect (`url(s)` print the NodePort and the matching `make forward` command) |
-| `make down` / `make split-down` / `make destroy` | remove an instance / the three instances / delete the cluster |
-
-Upgrading a cluster that ran the pre-overlay single instance: `kubectl -n internal-tools delete
-deploy,svc internal-tools` once before `make deploy` (the Service selector gained an instance
-label, which Kubernetes will not patch in place; the PVC and its data are kept).
-
-After a code change: `make redeploy` (the Deployment uses `Recreate` because SQLite on a
-single ReadWriteOnce volume wants one writer). Config lives in `deploy/k8s/base/configmap.yaml`
-(`SEED=auto|always|never`, model names); secrets never touch the repo — the Secret is created
-from your environment, exactly as Devin Cloud injects them from its Secrets store.
-
-For a real cluster, swap the NodePort for an Ingress in front of your IdP (OIDC / Entra ID
-replaces the demo `X-User` header) and point `DB_PATH` at a managed database volume or replace
-SQLite with Postgres.
-
 ## Configure OpenAI (LLM + embedding model)
 
 Everything runs without a key — the AI panels then say **rules** (deterministic provider) and the
