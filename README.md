@@ -392,4 +392,5 @@ test fails if a signing key appears in a tracked file.
 | Declarative environment | `environment.yaml` | Managed environment provisioning |
 | Secrets store | `.env.example` (names), `os.environ` (reads) | Connection references / Key Vault |
 
-See `docs/EVALUATION.md` for the build-vs-buy assessment.
+See `docs/EVALUATION.md` for the build-vs-buy assessment and `docs/COST_COMPARISON.md` for the
+annual cost of Power Apps vs this platform at 1,000 users.
