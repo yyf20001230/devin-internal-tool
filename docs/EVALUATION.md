@@ -55,8 +55,8 @@ grid, detail-pane actions, AI summary and NL query when those were added to the 
 |---|---|---|
 | First tool | Days for a maker to learn; hours once fluent | This prototype: ~1h of Devin for platform + 3 tools; a few more hours for shell, policy automation and AI |
 | Nth tool | Hours to a day, in Studio | `/new-tool`: one short Devin session + 15-30 min human PR review |
-| Production-ready | Included (Microsoft runs it) | **Not free:** OIDC, Postgres, migrations, deployment, backups, relationships, outbox — realistically 4-8 Devin sessions plus 2-3 engineer-days of review and security sign-off |
-| Ongoing licence | Per-user/per-app premium licences for anyone touching Dataverse or premium connectors; Managed Environments for the governance features that matter to a fintech | Hosting only (a small VM / container) + Devin usage |
+| Production-ready | Included (Microsoft runs it) | **Not free:** OIDC, Postgres, migrations, backups, relationships, outbox — realistically 4-8 Devin sessions plus 2-3 engineer-days of review and security sign-off. Packaging is done: one image + Kubernetes manifests (`make minikube`) that drop onto any cluster you already run |
+| Ongoing licence | Per-user/per-app premium licences for anyone touching Dataverse or premium connectors; Managed Environments for the governance features that matter to a fintech | Hosting only (one pod + a volume on your existing cluster) + Devin usage |
 
 At ~100+ ops users on premium licences the Power Apps run-rate is real money every year;
 the Devin platform's cost is front-loaded and then near flat. Below ~30 users the licence

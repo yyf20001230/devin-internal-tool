@@ -172,6 +172,43 @@ Sign in as a demo identity — each sees only the boards its roles grant:
 `Devin AI` is a service identity: it appears in audit history as the actor of automated
 decisions and cannot sign in.
 
+## Run it on minikube (Docker + Kubernetes)
+
+The same app ships as one container image (`Dockerfile`: Node builds the UI, a slim Python
+image serves API + UI on :8000) plus Kubernetes manifests in `deploy/k8s/` (Kustomize:
+Namespace, ConfigMap, PVC for the SQLite file, Deployment, NodePort Service). The pod seeds the
+demo data the first time its volume is empty, then keeps it across restarts.
+
+**Prerequisites:** Docker, [minikube](https://minikube.sigs.k8s.io/docs/start/), kubectl
+(`brew install minikube kubectl`).
+
+```bash
+export OPENAI_API_KEY=sk-...   # optional; omit for offline rules/lexical mode
+make minikube                  # start cluster → build image → deploy → create secret → print URL
+```
+
+`make minikube` prints the app URL (`minikube service internal-tools -n internal-tools --url`);
+open it and sign in as usual. Other targets:
+
+| Target | What it does |
+|---|---|
+| `make image` | `docker build` + `minikube image load` (no registry). Docker Hub rate-limiting you? `make image BASE_REGISTRY=mirror.gcr.io/library` |
+| `make deploy` | `kubectl apply -k deploy/k8s` and wait for the rollout |
+| `make redeploy` | after a code change: rebuild the image and roll the pod |
+| `make secret` | creates/updates the `internal-tools-secrets` Secret from `OPENAI_API_KEY` / `WEBHOOK_SIGNING_SECRET` in your shell and restarts the pod |
+| `make reseed` | wipes the SQLite file on the volume and restarts → fresh demo data |
+| `make status` / `make logs` / `make url` | inspect |
+| `make down` / `make destroy` | remove the app / delete the cluster |
+
+After a code change: `make redeploy` (the Deployment uses `Recreate` because SQLite on a
+single ReadWriteOnce volume wants one writer). Config lives in `deploy/k8s/configmap.yaml`
+(`SEED=auto|always|never`, model names); secrets never touch the repo — the Secret is created
+from your environment, exactly as Devin Cloud injects them from its Secrets store.
+
+For a real cluster, swap the NodePort for an Ingress in front of your IdP (OIDC / Entra ID
+replaces the demo `X-User` header) and point `DB_PATH` at a managed database volume or replace
+SQLite with Postgres.
+
 ## Devin Cloud features used
 
 | Feature | File | Power Apps analogue |

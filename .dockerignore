@@ -1,0 +1,14 @@
+.git
+.venv
+node_modules
+web/node_modules
+web/dist
+data.db
+*.db
+.env
+__pycache__
+.pytest_cache
+docs
+tests
+scripts
+deploy/k8s
