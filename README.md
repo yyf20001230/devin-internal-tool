@@ -438,4 +438,5 @@ test fails if a signing key appears in a tracked file.
 
 See `docs/EVALUATION.md` for the build-vs-buy assessment and `docs/COST_COMPARISON.md` for the
 annual cost of Power Apps (current $250k/yr spend) vs this platform at 700 active users, and how the
-per-board images scale.
+per-board images scale. `docs/KEY_DECISIONS.md` is the one-page account of the scope, architecture
+and tradeoffs behind the build.
