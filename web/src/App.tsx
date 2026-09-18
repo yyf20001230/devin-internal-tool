@@ -334,7 +334,7 @@ export default function App() {
               <div className="grid-wrap">
                 <div className="views">
                   {tool?.views.map(v => (
-                    <button key={v.id} className={`view ${v.id === viewId ? 'active' : ''}`} onClick={() => { setViewId(v.id); setSel(null); setSort(null); setNl(null); setAsk(''); setAutoResult(null) }}>
+                    <button key={v.id} className={`view ${v.id === viewId ? 'active' : ''}`} onClick={() => { setViewId(v.id); setSel(null); setPaneOpen(false); setSort(null); setNl(null); setAsk(''); setAutoResult(null) }}>
                       {v.name}
                     </button>
                   ))}
