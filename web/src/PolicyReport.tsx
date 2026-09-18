@@ -3,9 +3,9 @@ import type { AutoOutcome, AutoReviewItem, AutoReviewResult, CheckResult, Rec } 
 import { Icon } from './Icon'
 
 const OUTCOME = {
-  cleared: { label: 'Cleared', colour: 'green', icon: 'check', verb: 'cleared because every check passed' },
-  escalated: { label: 'Escalated', colour: 'red', icon: 'arrow-up', verb: 'escalated because a mandatory control failed' },
-  review: { label: 'Left for human review', colour: 'amber', icon: 'user', verb: 'left for you because the policy could not settle it' },
+  cleared: { label: 'Cleared', colour: 'green', icon: 'check' },
+  escalated: { label: 'Escalated', colour: 'red', icon: 'arrow-up' },
+  review: { label: 'Left for human review', colour: 'amber', icon: 'user' },
 } as const
 const CHECK_ICON = { pass: 'check', review: 'alert', flag: 'x' } as const
 const CHECK_CLASS = { pass: 'green', review: 'amber', flag: 'red' } as const
@@ -29,20 +29,21 @@ export function Check({ c }: { c: CheckResult }) {
   const [open, setOpen] = useState(false)
   return (
     <div className={`chk ${CHECK_CLASS[c.outcome]}`}>
-      <div className="chk-row" onClick={() => setOpen(o => !o)}>
+      <div className="chk-row" onClick={() => setOpen(o => !o)} title={c.passed ? 'Passed' : 'Failed'}>
         <Icon name={CHECK_ICON[c.outcome]} className={CHECK_CLASS[c.outcome]} />
         <span className="chk-title">{c.title}</span>
-        <span className={`ev ${c.passed ? 'green' : 'red'}`}>{c.passed ? 'passed' : 'failed'}</span>
         <span className="clause">{c.clause}</span>
         <Icon name="chevron" size={12} className={`chev ${open ? 'open' : ''}`} />
       </div>
-      <div className="chk-detail">
-        <span>{c.detail}</span>
-        <span className="ev-vals">{Object.entries(c.evidence).map(([k, v]) => <code key={k}>{k}={fmt(v)}</code>)}</span>
-        <span className="ev-rule">rule: {rule(c.rule)}</span>
-      </div>
+      {(open || !c.passed) && <div className="chk-detail">{c.detail}</div>}
       {open && (
-        <div className="clause-text"><b>{c.clause} {c.clause_title}</b> <span className="src-doc">{c.policy}</span><br />{c.clause_text}</div>
+        <>
+          <div className="chk-detail">
+            <span className="ev-vals">{Object.entries(c.evidence).map(([k, v]) => <code key={k}>{k}={fmt(v)}</code>)}</span>
+            <span className="ev-rule">rule: {rule(c.rule)}</span>
+          </div>
+          <div className="clause-text"><b>{c.clause} {c.clause_title}</b> <span className="src-doc">{c.policy}</span><br />{c.clause_text}</div>
+        </>
       )}
     </div>
   )
@@ -56,10 +57,9 @@ function Item({ item, onOpen }: { item: AutoReviewItem; onOpen: (id: number) => 
       <div className="rep-row" onClick={() => onOpen(item.record_id)} title="Open the record to see every check, the values it was judged on and the clause text">
         <Icon name={o.icon} className={o.colour} />
         <b className="rep-title">{item.title}</b>
-        <span className={`pill ${o.colour}`}>{o.label}</span>
         <span className="rep-why">
-          {o.verb}
-          {item.action && <> · action <code>{item.action}</code> by <code>devin-ai</code></>}
+          {o.label}
+          {item.action && <> · <code>{item.action}</code></>}
           {' · '}{decisive.map(c => c.clause).join(', ')}
         </span>
         <button type="button" className="link" onClick={e => { e.stopPropagation(); onOpen(item.record_id) }}>open</button>
@@ -84,7 +84,7 @@ export function PolicyReport({ result, rows, onOpen, onClose, onResetAll }: {
         <span>Devin AI policy review</span>
         <span className="src">{result.policy_title}</span>
         <span className="spacer" />
-        <span className="sub">{result.items.length} records · every decision below is in the audit trail as <code>devin-ai</code></span>
+        <span className="sub">{result.items.length} records · decisions are in the audit trail as <code>devin-ai</code></span>
         <button className="iconbtn" onClick={onClose} title="Dismiss"><Icon name="x" size={13} /></button>
       </div>
       <div className="rep-tabs">
@@ -93,7 +93,6 @@ export function PolicyReport({ result, rows, onOpen, onClose, onResetAll }: {
             <b>{counts[k]}</b> {OUTCOME[k].label.toLowerCase()}
           </button>
         ))}
-        <span className="sub">Open a record to see each check, the values it was judged on, and the policy clause it cites.</span>
         <span className="spacer" />
         {onResetAll && acted > 0 && (
           <button className="btn small secondary" disabled={resetting} title="Undo every automated decision still in force on this tool"

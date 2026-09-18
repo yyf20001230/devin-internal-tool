@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ActionSpec, Answer, AuditEntry, FieldSpec, Rec, Review, Source, Summary, ToolSpec } from './api'
-import { api, fmt } from './api'
+import { api, fmt, stateAllows } from './api'
 import { pillColour } from './Cell'
 import { Icon, actionIcon } from './Icon'
 import { Check } from './PolicyReport'
@@ -110,19 +110,51 @@ const DECISIONS: { kind: NonNullable<ActionSpec['decision']>; cls: string }[] = 
   { kind: 'approve', cls: 'approve' }, { kind: 'reject', cls: 'danger' }, { kind: 'info', cls: 'secondary' },
 ]
 
-function Decisions({ actions, record, actionEnabled, onAction }: { actions: ActionSpec[]; record: Rec; actionEnabled: (a: ActionSpec, r: Rec) => boolean; onAction: (a: ActionSpec, r: Rec) => void }) {
+// A boolean field becomes a switch when some action flips it on and/or off (e.g. uat/prod on flags).
+// Which action runs is looked up from the actions' `set`, so the guards, confirm and comment rules still apply.
+function Switches({ tool, actions, record, actionEnabled, onAction }: { tool: ToolSpec; actions: ActionSpec[]; record: Rec; actionEnabled: (a: ActionSpec, r: Rec) => boolean; onAction: (a: ActionSpec, r: Rec) => void }) {
+  const rows = tool.fields.filter(f => f.type === 'boolean' && !f.computed).map(f => {
+    const on = Boolean(record[f.name])
+    const flip = actions.filter(a => !a.decision && typeof a.set[f.name] === 'boolean' && a.set[f.name] === !on)
+    if (!actions.some(a => typeof a.set[f.name] === 'boolean')) return null
+    const a = flip.find(x => actionEnabled(x, record)) ?? flip.find(x => x.allowed) ?? flip[0] ?? null
+    const enabled = a !== null && actionEnabled(a, record)
+    const why = !a ? `No action turns ${f.label} ${on ? 'off' : 'on'}` : enabled ? a.label : !a.allowed ? `${a.label}: requires role ${a.roles.join(' / ')}` : 'Not available in the current state'
+    return { f, on, a, enabled, why }
+  }).filter((s): s is NonNullable<typeof s> => s !== null)
+  if (!rows.length) return null
+  return (
+    <div className="switches">
+      {rows.map(s => (
+        <button key={s.f.name} className="switch" disabled={!s.enabled} title={s.why} onClick={() => s.a && onAction(s.a, record)}>
+          <span className={`tgl ${s.on ? 'on' : ''}`} />
+          <span>{s.f.label}</span>
+          <span className={`sub ${s.on ? 'green' : ''}`}>{s.on ? 'On' : 'Off'}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function Decisions({ tool, actions, record, actionEnabled, onAction }: { tool: ToolSpec; actions: ActionSpec[]; record: Rec; actionEnabled: (a: ActionSpec, r: Rec) => boolean; onAction: (a: ActionSpec, r: Rec) => void }) {
+  // A slot shows when the record is in a state where that decision applies. Policy (four-eyes role,
+  // failing checks) does not grey the button - the action flow warns first and audits the override.
+  // Only a role with no right to act at all (e.g. read-only) sees it disabled.
   const slots = DECISIONS.map(d => {
-    const all = actions.filter(a => a.decision === d.kind)
+    const all = actions.filter(a => a.decision === d.kind && stateAllows(a, record))
     if (!all.length) return null
-    const a = all.find(x => actionEnabled(x, record)) ?? all.find(x => x.allowed) ?? all[0]
+    const a = all.find(x => x.allowed) ?? all[0]
     const enabled = actionEnabled(a, record)
-    const why = enabled ? '' : !a.allowed ? `Requires role: ${a.roles.join(' / ')}` : 'Not available in the current state'
+    const why = enabled ? '' : `Read-only for your role (${a.roles.join(' / ')} may decide)`
     return { ...d, a, enabled, why }
   }).filter((s): s is NonNullable<typeof s> => s !== null)
-  const others = actions.filter(a => !a.decision && a.allowed && actionEnabled(a, record))
-  if (!slots.length && !others.length) return <div className="sub">No actions available in the current state.</div>
+  const switched = new Set(actions.flatMap(a => Object.entries(a.set).filter(([k, v]) => typeof v === 'boolean' && tool.fields.some(f => f.name === k && f.type === 'boolean')).map(([k]) => k)))
+  const others = actions.filter(a => !a.decision && a.allowed && actionEnabled(a, record) && !Object.keys(a.set).some(k => switched.has(k)))
+  const switches = <Switches tool={tool} actions={actions} record={record} actionEnabled={actionEnabled} onAction={onAction} />
+  if (!slots.length && !others.length && !switched.size) return <div className="sub">No actions available in the current state.</div>
   return (
     <div className="decisions">
+      {switches}
       {slots.length > 0 && (
         <div className="decision-row">
           {slots.map(s => (
@@ -231,7 +263,7 @@ export function RecordPane({ tool, record, actions, actionEnabled, onAction, onC
       )}
 
       {record && tab === 'summary' && actions.length > 0 && (
-        <Decisions actions={actions} record={record} actionEnabled={actionEnabled} onAction={onAction} />
+        <Decisions tool={tool} actions={actions} record={record} actionEnabled={actionEnabled} onAction={onAction} />
       )}
 
       {record && tab === 'summary' && review?.ai_decision && (
@@ -287,17 +319,12 @@ export function RecordPane({ tool, record, actions, actionEnabled, onAction, onC
             <Icon name="book" />
             <span>Policy checks</span>
             {review && <span className={`pill ${pillColour(review.verdict)}`}>{review.verdict}</span>}
+            <span className="spacer" />
+            {review && <span className="sub">{review.checks.filter(c => c.passed).length}/{review.checks.length} passed</span>}
           </div>
           {!review && <div className="sub">Running checks…</div>}
           {review?.checks.map(c => <Check key={c.id} c={c} />)}
-          {review && (
-            <div className="sub" style={{ marginTop: 6 }}>
-              {review.verdict === 'Cleared' && 'All checks passed — eligible for automatic clearance.'}
-              {review.verdict === 'Flagged' && 'A mandatory control failed — automation escalates, a lead decides.'}
-              {review.verdict === 'Needs review' && 'Automation settled everything it could; the remaining checks need a human.'}
-              {' Click a check to read the clause.'}
-            </div>
-          )}
+          {review && <div className="sub" style={{ marginTop: 6 }}>Click a check for the values it was judged on and the clause text.</div>}
         </section>
       )}
 

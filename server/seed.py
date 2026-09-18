@@ -34,19 +34,22 @@ def seed(db_path: Path | str = DB_PATH, tools_dir: Path = TOOLS_DIR) -> None:
                   "Oslo Marine AS", "Tandem Mobility", "Silverline Media", "Crescent Pharma",
                   "Birch Lane Bakery", "Atlas Courier Ltd", "Fjord Analytics", "Sunrise Dental Group",
                   "Lumen Studios", "Granite Build Co", "Willow Home Care", "Pioneer Robotics"]
+    # Most applicants are clean (the realistic queue): every third or so has something for a human.
     for i, name in enumerate(applicants):
-        score = random.randint(8, 96)
+        clean = i % 3 != 1
+        score = random.randint(8, 38) if clean else random.randint(42, 96)
         risk = "High" if score >= 70 else "Medium" if score >= 40 else "Low"
         decided = i >= 22
-        status = random.choice(["Approved", "Rejected"]) if decided else random.choice(["Pending", "In review", "In review", "Escalated"])
+        status = random.choice(["Approved", "Rejected"]) if decided else (
+            random.choice(["Pending", "In review", "In review"]) if clean else random.choice(["Pending", "In review", "Escalated"]))
         if status == "Escalated":
             risk = "High"
         opened = t - timedelta(days=random.randint(0, 13), hours=random.randint(0, 20))
         eng.create_record(kyc, SYSTEM, {
             "case_id": f"KYC-{10470 + i}", "applicant": name, "country": random.choice(countries),
-            "risk": risk, "risk_score": score, "sanctions_hit": score > 80 or random.random() < 0.1,
-            "docs_complete": random.choice([40, 60, 80, 100, 100, 100]),
-            "address_verified": random.random() < 0.8,
+            "risk": risk, "risk_score": score, "sanctions_hit": score > 80 or i in (4, 13),
+            "docs_complete": 100 if clean else random.choice([40, 60, 80, 100]),
+            "address_verified": clean or random.random() < 0.5,
             "id_document_number": f"P{random.randint(10000000, 99999999)}",
             "date_of_birth": f"19{random.randint(60, 99)}-{random.randint(1, 12):02d}-{random.randint(1, 28):02d}",
             "status": status, "assignee": random.choice(analysts),
@@ -61,20 +64,29 @@ def seed(db_path: Path | str = DB_PATH, tools_dir: Path = TOOLS_DIR) -> None:
     reasons = ref.field("reason").options
     for i in range(160):
         requested = t - timedelta(days=random.randint(0, 29), hours=random.randint(0, 23))
-        amount = round(random.choice([random.uniform(5, 120), random.uniform(50, 600), random.uniform(800, 4200)]), 2)
-        reason = random.choices(reasons, weights=[30, 22, 20, 8, 12, 8])[0]
-        risk = "High" if reason == "Fraud reversal" or amount > 2500 else "Medium" if amount > 600 else "Low"
-        if requested > t - timedelta(days=2) and i % 3:
+        # Mostly small, routine refunds that clear every check; a minority are large or unusual.
+        amount = round(random.choices([random.uniform(5, 120), random.uniform(120, 245), random.uniform(250, 900), random.uniform(1000, 4200)],
+                                      weights=[55, 25, 12, 8])[0], 2)
+        reason = random.choices(reasons, weights=[38, 28, 24, 3, 5, 2])[0]
+        days = random.choices([random.randint(1, 30), random.randint(31, 60), random.randint(61, 120)], weights=[78, 18, 4])[0]
+        prior = random.choices([0, 1, 2, 3, 4], weights=[66, 24, 6, 3, 1])[0]
+        if i in (4, 5):  # a couple of large refunds waiting for finance sign-off (RF-1.2)
+            amount, requested = round(random.uniform(1000, 4200), 2), t - timedelta(hours=random.randint(1, 30))
+        if requested > t - timedelta(days=3) and i % 3:
             status = "Awaiting approval"
+            if i % 4 and i not in (4, 5):  # most of the open queue is routine and clears every check
+                amount = round(random.uniform(5, 240), 2)
+                reason = random.choice(["Duplicate charge", "Pricing error", "Subscription cancelled"])  # RF-2.2 list
+                days, prior = random.randint(1, 45), random.choice([0, 0, 1])
         else:
             status = random.choices(["Approved", "Paid", "Rejected"], weights=[30, 60, 10])[0]
+        risk = "High" if reason == "Fraud reversal" or amount > 2500 else "Medium" if amount > 600 else "Low"
         eng.create_record(ref, SYSTEM, {
             "refund_id": f"RF-{88210 + i}", "merchant": random.choice(merchants), "amount": amount,
             "currency": random.choices(["GBP", "EUR", "USD"], weights=[6, 3, 1])[0],
             "rail": random.choices(["Card", "Bank transfer", "Wallet"], weights=[6, 3, 1])[0],
             "reason": reason, "risk": risk,
-            "days_since_purchase": random.choices([random.randint(1, 30), random.randint(31, 60), random.randint(61, 120)], weights=[6, 3, 1])[0],
-            "prior_refunds_90d": random.choices([0, 1, 2, 3, 4], weights=[55, 25, 10, 7, 3])[0],
+            "days_since_purchase": days, "prior_refunds_90d": prior,
             "customer_email": f"customer{random.randint(100, 999)}@example.com",
             "bank_account": f"GB{random.randint(10, 99)}BARC{random.randint(10000000000000, 99999999999999)}",
             "status": status, "reviewer": random.choice(["Sofia Alvarez", "Dan Whitfield", ""]) if status != "Awaiting approval" else random.choice(["Sofia Alvarez", ""]),
@@ -88,12 +100,14 @@ def seed(db_path: Path | str = DB_PATH, tools_dir: Path = TOOLS_DIR) -> None:
         ("payments.3ds2-challenge-flow", "payments-api", "Force 3DS2 challenge on high-risk", True, True, True, 100, "CR-2198", "Approved", "Amara Okafor", False),
         ("onboarding.selfie-liveness", "onboarding", "Liveness check during ID capture", True, True, False, 0, "CR-2240", "Pending", "Priya Nair", False),
         ("ledger.double-entry-v2", "ledger", "New ledger posting engine", True, False, False, 0, "", "None", "Lin Zhao", False),
-        ("web.new-merchant-dashboard", "web-app", "Redesigned merchant dashboard", True, True, True, 10, "", "None", "", False),
-        ("payments.apple-pay", "payments-api", "Apple Pay acceptance", True, True, True, 100, "CR-1902", "Approved", "Lin Zhao", True),
+        ("web.new-merchant-dashboard", "web-app", "Redesigned merchant dashboard", True, True, True, 10, "CR-2212", "Approved", "Amara Okafor", False),
+        ("payments.apple-pay", "payments-api", "Apple Pay acceptance", True, True, True, 100, "CR-1902", "Approved", "Lin Zhao", False),
         ("refunds.auto-approve-under-50", "refunds-svc", "Skip manual review for refunds < 50", True, True, False, 0, "CR-2244", "Pending", "Sofia Alvarez", False),
         ("onboarding.sanctions-v3", "onboarding", "New sanctions screening provider", True, False, False, 0, "", "None", "Marcus Chen", False),
         ("web.dark-mode", "web-app", "Dark mode", True, True, True, 100, "CR-1811", "Approved", "Amara Okafor", True),
         ("payments.open-banking-payouts", "payments-api", "Payouts over open banking", True, True, True, 50, "CR-2250", "Rejected", "Lin Zhao", False),
+        ("ledger.reconciliation-alerts", "ledger", "Alert on unreconciled postings", True, True, True, 100, "CR-2205", "Approved", "Lin Zhao", False),
+        ("web.export-csv", "web-app", "CSV export from merchant reports", True, True, False, 0, "", "None", "", False),
     ]
     for key, svc, desc, dev, uat, prod, roll, cr, crs, owner, stale in flags:
         eng.create_record(fl, SYSTEM, {

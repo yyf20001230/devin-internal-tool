@@ -28,9 +28,10 @@ export function Cell({ f, r, isTitle }: { f: FieldSpec; r: Rec; isTitle?: boolea
   if (isTitle) return <span className="link">{String(v)}</span>
   switch (f.type) {
     case 'boolean':
-      if (['dev', 'uat', 'prod'].includes(f.name)) return <span className={`tgl ${v ? 'on' : ''}`} />
-      if (/verified|complete|approved|cr_|change/.test(f.name)) return v ? <span className="green">Yes</span> : <span className="amber">No</span>
-      return v ? <span className="red" style={{ fontWeight: 600 }}>Yes</span> : <span style={{ color: '#5c5c62' }}>No</span>
+      // Environment flags are read-only indicators in the grid (switching happens in the record pane).
+      if (['dev', 'uat', 'prod'].includes(f.name)) return <span className={`dotted ${v ? 'green' : 'off'}`} title={v ? 'On' : 'Off'}><span className="dot" />{v ? 'On' : 'Off'}</span>
+      if (/verified|complete|approved|cr_|change/.test(f.name)) return v ? <span className="green">Yes</span> : <span className="dim">No</span>
+      return v ? <span className="red">Yes</span> : <span className="dim">No</span>
     case 'choice': return <Choice f={f} v={String(v)} />
     case 'money': return <>{fmt.money(Number(v), typeof r.currency === 'string' ? r.currency : 'GBP')}</>
     case 'percent': return <>{fmt.num(Number(v))}%</>

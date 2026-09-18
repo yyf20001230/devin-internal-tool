@@ -23,7 +23,7 @@ fields:
     type: text
     visible_to: [finance]     # only finance sees full destination account
     mask: last4
-  - {name: status, label: Status, type: choice, options: [Awaiting approval, On hold, Approved, Rejected, Paid], default: Awaiting approval, width: 130}
+  - {name: status, label: Status, type: choice, options: [Awaiting approval, Approved, Rejected, Paid], default: Awaiting approval, width: 130}
   - {name: reviewer, label: Reviewer, type: text, width: 130}
   - {name: requested_at, label: Requested, type: datetime, width: 140}
   - {name: notes, label: Notes, type: multiline}
@@ -39,11 +39,6 @@ views:
     filter: {status: Awaiting approval, amount: {gte: 1000}}
     columns: [refund_id, merchant, amount, reason, risk, policy_verdict, requested_at]
     sort: amount desc
-  - id: hold
-    name: On hold
-    filter: {status: On hold}
-    columns: [refund_id, merchant, amount, reason, risk, policy_verdict, requested_at]
-    sort: requested_at asc
   - id: approved
     name: Approved - ready for payout
     filter: {status: Approved}
@@ -60,6 +55,9 @@ views:
     columns: [refund_id, merchant, amount, reason, status, requested_at]
     sort: requested_at desc
 
+# Decisions are always clickable for anyone on the board. RF-1.2 (finance sign-off over 1,000) is
+# advisory at the button: ops approving a large refund gets a policy warning, and the override is
+# written to the audit trail with the justification comment.
 actions:
   - id: approve
     decision: approve
@@ -70,39 +68,27 @@ actions:
     set: {status: Approved}
   - id: approve_large
     decision: approve
-    label: Approve (finance)
+    label: Approve
     icon: check
-    roles: [finance]
+    roles: [payments_ops, finance]
+    four_eyes: {roles: [finance], clause: RF-1.2}
     only_when: {status: Awaiting approval, amount: {gte: 1000}}
     set: {status: Approved}
     requires_comment: true
-    confirm: This refund is over the ops limit and needs finance sign-off. Approve?
-  - id: hold
-    label: Put on hold
-    icon: pause
-    roles: [payments_ops, finance]
-    only_when: {status: Awaiting approval}
-    set: {status: On hold}
-    requires_comment: true
-  - id: resume
-    label: Resume review
-    icon: play
-    roles: [payments_ops, finance]
-    only_when: {status: On hold}
-    set: {status: Awaiting approval}
+    confirm: This refund is 1,000 or more, so policy asks for finance sign-off with a written justification.
   - id: request_info
     decision: info
     label: Request more info
     icon: mail
     roles: [payments_ops, finance]
-    only_when: {status: [Awaiting approval, On hold]}
+    only_when: {status: Awaiting approval}
     webhook: https://hooks.internal/merchants/request-refund-evidence
   - id: reject
     decision: reject
     label: Reject
     icon: x
     roles: [payments_ops, finance]
-    only_when: {status: [Awaiting approval, On hold]}
+    only_when: {status: Awaiting approval}
     set: {status: Rejected}
     requires_comment: true
     destructive: true
@@ -146,7 +132,7 @@ checks:
     when: {risk: [Low, Medium]}
     on_fail: flag
     pass_text: No fraud indicators.
-    fail_text: High risk / fraud reversal - hold for the fraud team.
+    fail_text: High risk / fraud reversal - leave for the fraud team; do not approve.
   - id: velocity
     clause: RF-3.2
     title: Customer refund velocity within limit (2 per 90 days)
@@ -161,14 +147,11 @@ auto_review:
   clear_action: auto_approve
 
 dashboard:
-  - {type: kpi, title: Refund value (30d), metric: sum, field: amount, format: money, filter: {requested_at: {gte: now-30d}}}
-  - {type: kpi, title: Refunds requested (30d), filter: {requested_at: {gte: now-30d}}}
   - {type: kpi, title: Awaiting approval, filter: {status: Awaiting approval}}
   - {type: kpi, title: Awaiting value, metric: sum, field: amount, format: money, filter: {status: Awaiting approval}}
-  - {type: kpi, title: On hold, filter: {status: On hold}}
+  - {type: kpi, title: Refund value (30d), metric: sum, field: amount, format: money, filter: {requested_at: {gte: now-30d}}}
   - {type: series, title: Refund value by day, metric: sum, field: amount, date_field: requested_at, days: 14, chart: bar, format: money}
-  - {type: group, title: Top refund reasons (30d), field: reason, chart: hbar, filter: {requested_at: {gte: now-30d}}}
-  - {type: group, title: Value by rail (30d), field: rail, metric: sum, value_field: amount, chart: donut, format: money, filter: {requested_at: {gte: now-30d}}}
+  - {type: group, title: Refund value by reason (30d), field: reason, metric: sum, value_field: amount, format: money, chart: hbar, filter: {requested_at: {gte: now-30d}}}
 
 permissions:
   read: [payments_ops, finance, readonly]

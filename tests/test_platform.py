@@ -127,18 +127,50 @@ def test_export_privilege(client):
 
 def test_action_roles_guards_and_audit(client):
     pending = client.get("/api/tools/kyc/records?view=open", headers=h("marcus")).json()
-    case = next(r for r in pending if r["status"] == "Pending")
+    case = next(r for r in pending if r["status"] == "Pending" and r["policy_verdict"] == "Cleared")
     rid = case["id"]
-    # analyst cannot approve
-    assert client.post("/api/tools/kyc/actions/approve", json={"record_id": rid}, headers=h("priya")).status_code == 403
-    # lead cannot approve a Pending case (state guard)
-    assert client.post("/api/tools/kyc/actions/approve", json={"record_id": rid}, headers=h("marcus")).status_code == 400
+    # read-only has no right to act at all
+    assert client.post("/api/tools/kyc/actions/approve", json={"record_id": rid}, headers=h("auditor")).status_code == 403
     # analyst starts review, lead approves
     assert client.post("/api/tools/kyc/actions/start_review", json={"record_id": rid}, headers=h("priya")).json()["status"] == "In review"
     assert client.post("/api/tools/kyc/actions/approve", json={"record_id": rid}, headers=h("marcus")).json()["status"] == "Approved"
+    # state guard: nothing left to decide
+    assert client.post("/api/tools/kyc/actions/approve", json={"record_id": rid}, headers=h("marcus")).status_code == 400
     trail = client.get(f"/api/tools/kyc/audit?record_id={rid}", headers=h("priya")).json()
     assert [e["action"] for e in trail] == ["action:approve", "action:start_review"]
     assert trail[0]["user_id"] == "marcus" and trail[0]["before"] == {"status": "In review"}
+    assert "policy override" not in (trail[0]["comment"] or "")
+
+
+def test_decisions_outside_four_eyes_role_warn_then_audit_the_override(client):
+    """KYC-1.2: approvals are a compliance-lead decision. An analyst is not blocked - the preview
+    tells the UI which clauses would be overridden, and the run writes them into the audit comment."""
+    case = next(r for r in client.get("/api/tools/kyc/records?view=open", headers=h("priya")).json()
+                if r["status"] == "In review" and r["policy_verdict"] == "Cleared")
+    rid = case["id"]
+    preview = client.get("/api/tools/kyc/actions/approve/preview", params={"record_id": rid}, headers=h("priya")).json()
+    assert [o["clause"] for o in preview["overrides"]] == ["KYC-1.2"]
+    assert preview["overrides"][0]["clause_text"] and preview["overrides"][0]["policy"] == "kyc_review_policy"
+    # the lead has nothing to override on a clean case
+    assert client.get("/api/tools/kyc/actions/approve/preview", params={"record_id": rid}, headers=h("marcus")).json()["overrides"] == []
+    # read-only cannot even preview
+    assert client.get("/api/tools/kyc/actions/approve/preview", params={"record_id": rid}, headers=h("auditor")).status_code == 403
+    assert client.post("/api/tools/kyc/actions/approve", json={"record_id": rid}, headers=h("priya")).json()["status"] == "Approved"
+    trail = client.get(f"/api/tools/kyc/audit?record_id={rid}", headers=h("marcus")).json()
+    assert trail[0]["user_id"] == "priya" and "policy override" in trail[0]["comment"] and "KYC-1.2" in trail[0]["comment"]
+
+
+def test_approving_a_record_with_failing_checks_lists_the_failed_clauses(client):
+    case = next(r for r in client.get("/api/tools/kyc/records?view=open", headers=h("marcus")).json()
+                if r["status"] in ("In review", "Escalated") and r["sanctions_hit"])
+    preview = client.get("/api/tools/kyc/actions/approve/preview", params={"record_id": case["id"]}, headers=h("marcus")).json()
+    clauses = {o["clause"] for o in preview["overrides"]}
+    assert "KYC-2.1" in clauses and "KYC-1.2" not in clauses
+    # rejecting the same record overrides nothing: failing checks only matter for approvals
+    assert client.get("/api/tools/kyc/actions/reject/preview", params={"record_id": case["id"]}, headers=h("marcus")).json()["overrides"] == []
+    client.post("/api/tools/kyc/actions/approve", json={"record_id": case["id"], "comment": "EDD completed offline"}, headers=h("marcus"))
+    trail = client.get(f"/api/tools/kyc/audit?record_id={case['id']}", headers=h("marcus")).json()
+    assert trail[0]["comment"].startswith("EDD completed offline") and "KYC-2.1" in trail[0]["comment"]
 
 
 def test_reject_requires_comment(client):
@@ -150,7 +182,11 @@ def test_reject_requires_comment(client):
 def test_refund_amount_threshold_routes_to_finance(client):
     large = client.get("/api/tools/refunds/records?view=large", headers=h("dan")).json()[0]
     assert client.post("/api/tools/refunds/actions/approve", json={"record_id": large["id"]}, headers=h("sofia")).status_code == 400
-    assert client.post("/api/tools/refunds/actions/approve_large", json={"record_id": large["id"]}, headers=h("sofia")).status_code == 403
+    # ops may approve a large refund, but only with a justification, and RF-1.2 is flagged as overridden
+    assert client.post("/api/tools/refunds/actions/approve_large", json={"record_id": large["id"]}, headers=h("sofia")).status_code == 400
+    preview = client.get("/api/tools/refunds/actions/approve_large/preview", params={"record_id": large["id"]}, headers=h("sofia")).json()
+    assert "RF-1.2" in {o["clause"] for o in preview["overrides"]}
+    assert "RF-1.2" not in {o["clause"] for o in client.get("/api/tools/refunds/actions/approve_large/preview", params={"record_id": large["id"]}, headers=h("dan")).json()["overrides"]}
     r = client.post("/api/tools/refunds/actions/approve_large", json={"record_id": large["id"], "comment": "ok"}, headers=h("dan"))
     assert r.json()["status"] == "Approved"
 
@@ -158,15 +194,24 @@ def test_refund_amount_threshold_routes_to_finance(client):
 def test_webhook_action_logs_integration(client):
     flag = next(r for r in client.get("/api/tools/flags/records?view=all", headers=h("lin")).json() if r["cr_status"] == "None" and not r["prod"])
     rid = flag["id"]
-    # engineer: cannot enable PROD without an approved CR, can request one (webhook -> change management)
-    assert client.post("/api/tools/flags/actions/enable_prod", json={"record_id": rid}, headers=h("lin")).status_code == 403
-    assert client.post("/api/tools/flags/actions/request_release", json={"record_id": rid, "comment": "ship it"}, headers=h("lin")).json()["cr_status"] == "Pending"
-    # release manager: approve CR, then enable
-    assert client.post("/api/tools/flags/actions/enable_prod", json={"record_id": rid}, headers=h("amara")).status_code == 400
-    assert client.post("/api/tools/flags/actions/approve_cr", json={"record_id": rid}, headers=h("amara")).json()["cr_status"] == "Approved"
-    assert client.post("/api/tools/flags/actions/enable_prod", json={"record_id": rid}, headers=h("amara")).json()["prod"] == 1
-    log = client.get("/api/tools/flags/integrations", headers=h("amara")).json()
+    # engineer toggles PROD directly (webhook -> flag store); FF-2.1 is enforced by the policy check, not the toggle
+    assert client.post("/api/tools/flags/actions/enable_prod", json={"record_id": rid}, headers=h("lin")).json()["prod"] == 1
+    log = client.get("/api/tools/flags/integrations", headers=h("lin")).json()
     assert log[0]["webhook"].endswith("/flag-store/sync") and log[0]["payload"]["title"] == flag["key"]
+    review = client.get(f"/api/tools/flags/records/{rid}/review", headers=h("lin")).json()
+    assert review["verdict"] == "Flagged" and any(c["clause"] == "FF-2.1" and not c["passed"] for c in review["checks"])
+    # kill switch is open to engineers too, but needs a comment
+    assert client.post("/api/tools/flags/actions/kill_switch", json={"record_id": rid}, headers=h("lin")).status_code == 400
+    assert client.post("/api/tools/flags/actions/kill_switch", json={"record_id": rid, "comment": "rollback"}, headers=h("lin")).json()["prod"] == 0
+    # CRs are raised outside this tool (no request action); an engineer approving one is warned (FF-2.2) and audited
+    assert "request_release" not in {a["id"] for a in client.get("/api/tools/flags", headers=h("lin")).json()["actions"]}
+    pending = next(r for r in client.get("/api/tools/flags/records?view=all", headers=h("lin")).json() if r["cr_status"] == "Pending")
+    assert [o["clause"] for o in client.get("/api/tools/flags/actions/approve_cr/preview", params={"record_id": pending["id"]}, headers=h("lin")).json()["overrides"]] == ["FF-2.2"]
+    assert client.get("/api/tools/flags/actions/approve_cr/preview", params={"record_id": pending["id"]}, headers=h("amara")).json()["overrides"] == []
+    assert client.post("/api/tools/flags/actions/approve_cr", json={"record_id": pending["id"]}, headers=h("amara")).json()["cr_status"] == "Approved"
+    assert client.post("/api/tools/flags/actions/enable_prod", json={"record_id": pending["id"]}, headers=h("lin")).json()["prod"] == 1
+    review = client.get(f"/api/tools/flags/records/{pending['id']}/review", headers=h("lin")).json()
+    assert all(c["passed"] for c in review["checks"] if c["clause"] == "FF-2.1")
 
 
 def test_webhook_payloads_are_signed_with_env_secret_only(client, monkeypatch):
@@ -193,7 +238,7 @@ def test_dashboard_tiles_compute(client):
     by_title = {t["title"]: t for t in tiles}
     assert by_title["Refund value (30d)"]["value"] > 0
     assert len(by_title["Refund value by day"]["data"]) == 14
-    assert sum(d["value"] for d in by_title["Top refund reasons (30d)"]["data"]) == by_title["Refunds requested (30d)"]["value"]
+    assert round(sum(d["value"] for d in by_title["Refund value by reason (30d)"]["data"]), 2) == round(by_title["Refund value (30d)"]["value"], 2)
 
 
 def test_create_validates_choices_and_required(client):
@@ -205,14 +250,15 @@ def test_create_validates_choices_and_required(client):
     assert r.status_code == 201 and r.json()["status"] == "Awaiting approval" and r.json()["currency"] == "GBP"
 
 
-def test_refund_hold_and_resume_cycle(client):
+def test_refund_decisions_are_approve_reject_or_request_info(client):
+    tool = client.get("/api/tools/refunds", headers=h("sofia")).json()
+    assert {a["id"] for a in tool["actions"]}.isdisjoint({"hold", "resume"})
+    assert {a["decision"] for a in tool["actions"] if a["decision"]} == {"approve", "reject", "info"}
     row = next(r for r in client.get("/api/tools/refunds/records?view=awaiting", headers=h("sofia")).json() if r["amount"] < 1000)
     rid = row["id"]
-    assert client.post("/api/tools/refunds/actions/hold", json={"record_id": rid}, headers=h("sofia")).status_code == 400  # comment required
-    assert client.post("/api/tools/refunds/actions/hold", json={"record_id": rid, "comment": "awaiting merchant evidence"}, headers=h("sofia")).json()["status"] == "On hold"
-    assert client.post("/api/tools/refunds/actions/approve", json={"record_id": rid}, headers=h("sofia")).status_code == 400
-    assert rid in {r["id"] for r in client.get("/api/tools/refunds/records?view=hold", headers=h("sofia")).json()}
-    assert client.post("/api/tools/refunds/actions/resume", json={"record_id": rid}, headers=h("sofia")).json()["status"] == "Awaiting approval"
+    assert client.post("/api/tools/refunds/actions/request_info", json={"record_id": rid}, headers=h("sofia")).json()["status"] == "Awaiting approval"
+    assert client.post("/api/tools/refunds/actions/reject", json={"record_id": rid}, headers=h("sofia")).status_code == 400  # comment required
+    assert client.post("/api/tools/refunds/actions/reject", json={"record_id": rid, "comment": "no evidence"}, headers=h("sofia")).json()["status"] == "Rejected"
 
 
 # ---- knowledge base + policy checks -------------------------------------------------------------
@@ -315,9 +361,9 @@ def test_refund_auto_review_only_approves_small_eligible_refunds(client):
 
 def test_group_tile_sums_value_field_not_group_key(client):
     tiles = client.get("/api/tools/refunds/dashboard", headers=h("dan")).json()
-    rail = next(t for t in tiles if t["field"] == "rail")
-    assert rail["value_field"] == "amount"
-    assert sum(d["value"] for d in rail["data"]) > 0
+    by_reason = next(t for t in tiles if t["field"] == "reason")
+    assert by_reason["value_field"] == "amount"
+    assert sum(d["value"] for d in by_reason["data"]) > 0
 
 
 # ---- embedded AI: summaries + NL filters are governed like everything else -------------------

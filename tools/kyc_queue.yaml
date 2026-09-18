@@ -58,6 +58,8 @@ views:
     filter: {status: [Approved, Rejected]}
     columns: [case_id, applicant, risk, risk_score, status, assignee, opened_at]
 
+# Decisions are always clickable for anyone on the board. KYC-1.2 (four-eyes) is advisory at the
+# button: an analyst deciding gets a policy warning, and the override is written to the audit trail.
 actions:
   - id: start_review
     label: Start review
@@ -69,16 +71,18 @@ actions:
     decision: approve
     label: Approve
     icon: check
-    roles: [compliance_lead]
-    only_when: {status: [In review, Escalated]}
+    roles: [analyst, compliance_lead]
+    four_eyes: {roles: [compliance_lead], clause: KYC-1.2}
+    only_when: {status: [Pending, In review, Documents requested, Escalated]}
     set: {status: Approved}
     confirm: Approve this applicant? This opens their account.
   - id: reject
     decision: reject
     label: Reject
     icon: x
-    roles: [compliance_lead]
-    only_when: {status: [In review, Escalated]}
+    roles: [analyst, compliance_lead]
+    four_eyes: {roles: [compliance_lead], clause: KYC-1.2}
+    only_when: {status: [Pending, In review, Documents requested, Escalated]}
     set: {status: Rejected}
     requires_comment: true
     destructive: true
@@ -154,7 +158,6 @@ dashboard:
   - {type: kpi, title: Open cases, filter: {status: [Pending, In review, Documents requested, Escalated]}}
   - {type: kpi, title: Breaching SLA in 4h, filter: {status: [Pending, In review, Documents requested, Escalated], sla_due: {lt: now+4h}}}
   - {type: kpi, title: Sanctions / PEP hits open, filter: {sanctions_hit: true, status: [Pending, In review, Documents requested, Escalated]}}
-  - {type: group, title: Open cases by risk, field: risk, chart: donut, filter: {status: [Pending, In review, Documents requested, Escalated]}}
   - {type: group, title: Queue by analyst, field: assignee, chart: hbar, filter: {status: [Pending, In review, Documents requested, Escalated]}}
   - {type: series, title: Cases opened per day, date_field: opened_at, days: 14, chart: bar}
 

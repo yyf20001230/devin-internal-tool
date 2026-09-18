@@ -12,7 +12,7 @@ from collections.abc import Iterator, Sequence
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .spec import VERDICT_FIELD, Filter, ToolSpec, User, filter_fields
+from .spec import VERDICT_FIELD, ActionSpec, Filter, ToolSpec, User, filter_fields
 
 SQL_TYPES = {
     "text": "TEXT", "multiline": "TEXT", "choice": "TEXT", "date": "TEXT", "datetime": "TEXT",
@@ -328,6 +328,7 @@ class Engine:
         record = self._raw(spec, rid)  # action roles are the permission check; automation has no read role
         if not matches(action.only_when, record):
             raise Invalid(f"'{action.label}' is not available for this record")
+        comment = self._with_overrides(spec, user, action, record, comment)
         # actions may set protected fields on the user's behalf (like a plugin running as system)
         if action.set:
             sets = ", ".join(f"{k}=?" for k in action.set)
@@ -346,6 +347,38 @@ class Engine:
             )
         self.conn.commit()
         return self._mask(spec, user, self._raw(spec, rid))
+
+    def overrides(self, spec: ToolSpec, user: User, action: ActionSpec, record: dict) -> list[dict]:
+        """The policy clauses `user` would be overriding by running `action` on `record` right now.
+
+        Policy is advisory at the button: deciding outside the four-eyes role, or approving a record
+        that would still fail a check afterwards, is allowed - the UI warns first and run_action writes
+        the same list into the audit comment. Pure; no permissions, no writes."""
+        out: list[dict] = []
+        fe = action.four_eyes
+        if fe and not self._has_role(user, fe.roles):
+            out.append({"clause": fe.clause, "title": f"Decision reserved for {' / '.join(fe.roles)}",
+                        "detail": f"{user.name} is not in {' / '.join(fe.roles)}; the override is written to the audit trail."})
+        if action.decision == "approve":
+            after = {**record, **action.set}
+            out.extend({"clause": c["clause"], "title": c["title"], "detail": c["detail"]}
+                       for c in self.review(spec, after)["checks"] if not c["passed"])
+        return out
+
+    def action_preview(self, spec: ToolSpec, user: User, action_id: str, rid: int) -> dict:
+        action = next((a for a in spec.actions if a.id == action_id), None)
+        if action is None:
+            raise NotFound(f"action {action_id}")
+        if not self._has_role(user, action.roles):
+            raise Forbidden(f"{user.name} may not run '{action.label}'")
+        return {"overrides": self.overrides(spec, user, action, self._raw(spec, rid))}
+
+    def _with_overrides(self, spec: ToolSpec, user: User, action: ActionSpec, record: dict, comment: str | None) -> str | None:
+        notes = [f"{o['clause']} {o['title']}" for o in self.overrides(spec, user, action, record)]
+        if not notes:
+            return comment
+        note = "policy override - " + "; ".join(notes)
+        return f"{comment.strip()} · {note}" if comment and comment.strip() else note
 
     def export_csv(self, spec: ToolSpec, user: User, view_id: str | None) -> str:
         self.require(spec, user, "export")  # the prvExportToExcel equivalent
