@@ -1,0 +1,29 @@
+# Refunds only: image internal-tools-refunds:dev, its own Deployment/Service/PVC, NodePort 30082.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+nameSuffix: -refunds
+labels:
+  - pairs:
+      app.kubernetes.io/instance: refunds
+    includeSelectors: true
+images:
+  - name: internal-tools
+    newName: internal-tools-refunds
+    newTag: dev
+patches:
+  - target:
+      kind: ConfigMap
+      name: internal-tools-config
+    patch: |
+      - op: add
+        path: /data/TOOLS
+        value: "refunds"
+  - target:
+      kind: Service
+      name: internal-tools
+    patch: |
+      - op: replace
+        path: /spec/ports/0/nodePort
+        value: 30082

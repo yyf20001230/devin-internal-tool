@@ -174,34 +174,56 @@ decisions and cannot sign in.
 
 ## Run it on minikube (Docker + Kubernetes)
 
-The same app ships as one container image (`Dockerfile`: Node builds the UI, a slim Python
-image serves API + UI on :8000) plus Kubernetes manifests in `deploy/k8s/` (Kustomize:
-Namespace, ConfigMap, PVC for the SQLite file, Deployment, NodePort Service). The pod seeds the
-demo data the first time its volume is empty, then keeps it across restarts.
+The same app ships as a container image (`Dockerfile`: Node builds the UI, a slim Python
+image serves API + UI on :8000) plus Kubernetes manifests in `deploy/k8s/` (Kustomize base +
+one overlay per instance: ConfigMap, PVC for the SQLite file, Deployment, NodePort Service). The
+pod seeds the demo data the first time its volume is empty, then keeps it across restarts.
+
+Two ways to cut it:
+
+| | Image | Overlay | Port |
+|---|---|---|---|
+| All boards in one app (`TOOL=all`, default) | `internal-tools:dev` | `deploy/k8s/overlays/all` | 30080 |
+| KYC only | `internal-tools-kyc:dev` | `deploy/k8s/overlays/kyc` | 30081 |
+| Refunds only | `internal-tools-refunds:dev` | `deploy/k8s/overlays/refunds` | 30082 |
+| Feature flags only | `internal-tools-flags:dev` | `deploy/k8s/overlays/flags` | 30083 |
+
+A per-tool image is the same Dockerfile built with `--build-arg TOOLS=<id>`: it copies
+`tools/`, then deletes every definition except the selected one(s) (`deploy/select_tools.py`),
+and bakes `TOOLS=<id>` into the environment so the server loads, seeds and serves only that
+board; `_users.yaml`, the `knowledge/` policies and the UI are shared. The sign-in page lists
+only personas who have a board on that instance. Each instance gets its own Deployment, Service,
+PVC (so its own SQLite file and audit log); they share the namespace and the OpenAI Secret.
 
 **Prerequisites:** Docker, [minikube](https://minikube.sigs.k8s.io/docs/start/), kubectl
 (`brew install minikube kubectl`).
 
 ```bash
 export OPENAI_API_KEY=sk-...   # optional; omit for offline rules/lexical mode
-make minikube                  # start cluster → build image → deploy → create secret → print URL
+make split                     # three images + three instances (KYC, refunds, flags) → prints 3 URLs
+make minikube                  # or: the all-in-one instance on 30080
+make minikube TOOL=kyc         # or: just one of the per-tool instances
 ```
 
-`make minikube` prints the app URL (`minikube service internal-tools -n internal-tools --url`);
-open it and sign in as usual. Other targets:
+Every target takes `TOOL=all|kyc|refunds|flags` (default `all`); the `split-*` variants run the
+same target for each of the three per-tool instances:
 
 | Target | What it does |
 |---|---|
-| `make image` | `docker build` + `minikube image load` (no registry). Docker Hub rate-limiting you? `make image BASE_REGISTRY=mirror.gcr.io/library` |
-| `make deploy` | `kubectl apply -k deploy/k8s` and wait for the rollout |
-| `make redeploy` | after a code change: rebuild the image and roll the pod |
-| `make secret` | creates/updates the `internal-tools-secrets` Secret from `OPENAI_API_KEY` / `WEBHOOK_SIGNING_SECRET` in your shell and restarts the pod |
-| `make reseed` | wipes the SQLite file on the volume and restarts → fresh demo data |
-| `make status` / `make logs` / `make url` | inspect |
-| `make down` / `make destroy` | remove the app / delete the cluster |
+| `make image` / `make split-image` | `docker build --build-arg TOOLS=…` + `minikube image load` (no registry). Docker Hub rate-limiting you? add `BASE_REGISTRY=mirror.gcr.io/library` |
+| `make deploy` / `make split-deploy` | `kubectl apply -k deploy/k8s/overlays/$TOOL` and wait for the rollout |
+| `make redeploy` / `make split-redeploy` | after a code change: rebuild the image(s) and roll the pod(s) |
+| `make secret` | creates/updates the `internal-tools-secrets` Secret (shared by all instances) from `OPENAI_API_KEY` / `WEBHOOK_SIGNING_SECRET` in your shell and restarts the pods |
+| `make reseed` / `make split-reseed` | wipes the SQLite file on the volume and restarts → fresh demo data |
+| `make status` / `make logs` / `make url` / `make urls` | inspect (`urls` prints the three per-tool URLs) |
+| `make down` / `make split-down` / `make destroy` | remove an instance / the three instances / delete the cluster |
+
+Upgrading a cluster that ran the pre-overlay single instance: `kubectl -n internal-tools delete
+deploy,svc internal-tools` once before `make deploy` (the Service selector gained an instance
+label, which Kubernetes will not patch in place; the PVC and its data are kept).
 
 After a code change: `make redeploy` (the Deployment uses `Recreate` because SQLite on a
-single ReadWriteOnce volume wants one writer). Config lives in `deploy/k8s/configmap.yaml`
+single ReadWriteOnce volume wants one writer). Config lives in `deploy/k8s/base/configmap.yaml`
 (`SEED=auto|always|never`, model names); secrets never touch the repo — the Secret is created
 from your environment, exactly as Devin Cloud injects them from its Secrets store.
 

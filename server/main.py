@@ -112,7 +112,8 @@ def build_app(tools_dir: Path = TOOLS_DIR, db_path: Path | str = DB_PATH,
 
     @app.get("/api/users")
     def users():
-        return [u for u in directory.users if not u.service]  # demo sign-in page; stands in for Entra ID
+        # demo sign-in page; stands in for Entra ID. Only personas with a board on this instance.
+        return [u for u in directory.users if not u.service and engine.visible_tools(u)]
 
     @app.get("/api/knowledge")
     def knowledge_index(user: User = Depends(current_user)):

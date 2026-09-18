@@ -1,0 +1,29 @@
+# KYC review queue only: image internal-tools-kyc:dev, its own Deployment/Service/PVC, NodePort 30081.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+nameSuffix: -kyc
+labels:
+  - pairs:
+      app.kubernetes.io/instance: kyc
+    includeSelectors: true
+images:
+  - name: internal-tools
+    newName: internal-tools-kyc
+    newTag: dev
+patches:
+  - target:
+      kind: ConfigMap
+      name: internal-tools-config
+    patch: |
+      - op: add
+        path: /data/TOOLS
+        value: "kyc"
+  - target:
+      kind: Service
+      name: internal-tools
+    patch: |
+      - op: replace
+        path: /spec/ports/0/nodePort
+        value: 30081
