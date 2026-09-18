@@ -1,0 +1,31 @@
+# Chargeback watchlist only: image internal-tools-chargebacks:dev, its own Deployment/Service/PVC, NodePort 30084.
+# Not part of `make split` by default (SPLIT_TOOLS); build it with `make minikube TOOL=chargebacks`.
+# To add another board, copy this directory and change the four places that say "chargebacks" + the port.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+nameSuffix: -chargebacks
+labels:
+  - pairs:
+      app.kubernetes.io/instance: chargebacks
+    includeSelectors: true
+images:
+  - name: internal-tools
+    newName: internal-tools-chargebacks
+    newTag: dev
+patches:
+  - target:
+      kind: ConfigMap
+      name: internal-tools-config
+    patch: |
+      - op: add
+        path: /data/TOOLS
+        value: "chargebacks"
+  - target:
+      kind: Service
+      name: internal-tools
+    patch: |
+      - op: replace
+        path: /spec/ports/0/nodePort
+        value: 30084

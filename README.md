@@ -25,6 +25,17 @@ auto-review are declared; `server/` and `web/` never change when a tool is added
 tool (Chargeback Watchlist) was added after the platform was finished: 92 lines of YAML, zero
 platform code, all governance tests inherited.
 
+**Start here**
+
+| I want to… | Section |
+|---|---|
+| Run it on my laptop (`uvicorn`, http://localhost:8000) | [Run it locally](#run-it-locally) |
+| Run it on minikube and open it at http://localhost:8080 | [Run it on minikube](#run-it-on-minikube-docker--kubernetes) → *Open it on localhost* |
+| Build one image per board, or add a new image | [Run it on minikube](#run-it-on-minikube-docker--kubernetes) → *Adding another image* |
+| Turn on OpenAI (LLM + embeddings) locally or in the cluster | [Configure OpenAI](#configure-openai-llm--embedding-model) |
+| Add or change a policy rule the AI and checks use | [Maintaining the knowledge base](#maintaining-the-knowledge-base-for-ops-compliance-and-engineering) |
+| Add a whole new tool from a paragraph | `/new-tool` skill (`.devin/skills/new-tool/SKILL.md`) |
+
 ## What it replicates from Power Apps
 
 | Power Apps concept | Here |
@@ -109,11 +120,43 @@ cannot cite it, clear on it or answer questions about it. When policy changes, c
    `POST /api/knowledge/reindex` (any signed-in user) to pick the change up immediately.
    Only the clauses whose text changed are re-embedded.
 
+**Worked example — add a rule and have it enforced.** Say refunds older than 90 days now need
+finance sign-off.
+
+```markdown
+# knowledge/refund_policy.md  (append after RF-1.2)
+### RF-1.3 Refunds after 90 days
+A refund requested more than 90 days after the original purchase requires finance sign-off
+regardless of amount. Payments ops may only request more information; finance approves or rejects.
+```
+
+```yaml
+# tools/refunds.yaml  (add to checks: — a check passes when `when` matches the record)
+  - id: late_refund
+    clause: RF-1.3
+    title: Requested within 90 days (else finance sign-off)
+    when: {days_since_purchase: {lte: 90}}
+    on_fail: review          # review = needs a human; flag = policy breach, devin-ai escalates
+    pass_text: Inside 90 days.
+    fail_text: Over 90 days since purchase - finance must sign off.
+```
+
+Then `python -m pytest -q` (the server refuses to start if `RF-1.3` does not resolve to a heading),
+open a PR, and after deploy call `POST /api/knowledge/reindex` — or just restart the pod.
+`GET /api/knowledge/search?q=90+days` should now return the clause, and every refund's Policy check
+tab shows the new line.
+
 A new policy area (say, payouts) is a new file `knowledge/payout_policy.md` with its own
 prefix (`PO-`); the loader picks up every `.md` in the folder automatically, and a new tool
 references it with `auto_review: {policy: payout_policy}`. Don't put merchant, customer or
 identity data in these files — they are policy, they are sent to the embedding provider, and
 they are visible to every signed-in user.
+
+**Where the KB lives at runtime.** The Markdown in `knowledge/` is the source of truth (git). Every
+image copies it to `/app/knowledge/` (all policies ship in every image, including single-board
+ones, so cross-policy questions still work). On boot each instance indexes the clauses into the
+`kb_chunks` table of its own SQLite file (`/data/data.db` on that instance's volume) — one index
+per instance, rebuilt from the Markdown, never edited by hand.
 
 ## Run it locally
 
@@ -137,15 +180,15 @@ uvicorn server.main:app --host 0.0.0.0 --port 8000      # UI + API on http://loc
 
 Open http://localhost:8000 and pick a demo identity. Without `OPENAI_API_KEY` everything
 still works on the offline rules engine and lexical embeddings (the AI panels say "rules"
-instead of "LLM"). `python -m pytest -q` runs the 52 governance / policy / AI / KB tests.
+instead of "LLM"). `python -m pytest -q` runs the 58 governance / policy / AI / KB tests.
 
 After changing anything under `web/src`, run `npm --prefix web run build` again and hard-refresh
 the browser; the server serves the built files. Alternatively `npm --prefix web run dev` starts a
 hot-reloading dev server on :5173 that proxies the API to :8000.
 
 Optional: copy `.env.example` to `.env` and set `OPENAI_API_KEY` for live LLM output and
-`WEBHOOK_SIGNING_SECRET` for signed webhook payloads. In Devin Cloud these come from the
-Secrets store; nothing in the repo ever holds a value.
+`WEBHOOK_SIGNING_SECRET` for signed webhook payloads — see [Configure OpenAI](#configure-openai-llm--embedding-model).
+In Devin Cloud these come from the Secrets store; nothing in the repo ever holds a value.
 
 **Working a queue fast:** rows show only what you need to triage; open a record for the full
 detail in a three-tab pane: **Summary** (AI case summary + Approve / Reject / Request more info,
@@ -195,18 +238,80 @@ board; `_users.yaml`, the `knowledge/` policies and the UI are shared. The sign-
 only personas who have a board on that instance. Each instance gets its own Deployment, Service,
 PVC (so its own SQLite file and audit log); they share the namespace and the OpenAI Secret.
 
-**Prerequisites:** Docker, [minikube](https://minikube.sigs.k8s.io/docs/start/), kubectl
-(`brew install minikube kubectl`).
+**Prerequisites:** Docker Desktop (running), [minikube](https://minikube.sigs.k8s.io/docs/start/),
+kubectl and make:
 
 ```bash
+brew install minikube kubectl            # macOS; Linux: see the minikube link above
+minikube version && kubectl version --client
+```
+
+```bash
+cd devin-internal-tool
 export OPENAI_API_KEY=sk-...   # optional; omit for offline rules/lexical mode
-make split                     # three images + three instances (KYC, refunds, flags) → prints 3 URLs
-make minikube                  # or: the all-in-one instance on 30080
+make minikube                  # all-in-one instance: start cluster, build image, deploy
+make split                     # or: three images + three instances (KYC, refunds, flags)
 make minikube TOOL=kyc         # or: just one of the per-tool instances
 ```
 
-Every target takes `TOOL=all|kyc|refunds|flags` (default `all`); the `split-*` variants run the
-same target for each of the three per-tool instances:
+The first `make minikube` takes a few minutes (cluster start + image build); later runs reuse both.
+
+### Open it on localhost
+
+With the Docker driver (the default on macOS/Windows) the cluster's NodePorts are **not** reachable
+from your machine, so map an instance to a local port with `kubectl port-forward` — wrapped as
+`make forward`:
+
+```bash
+make forward                   # all-in-one   → http://localhost:8080   (Ctrl-C stops it)
+make forward TOOL=kyc          # KYC          → http://localhost:8081
+make forward TOOL=refunds      # Refunds      → http://localhost:8082
+make forward TOOL=flags        # Feature flags→ http://localhost:8083
+make split-forward             # all three per-tool forwards in the background; `make unforward` stops them
+```
+
+Open http://localhost:8080 and sign in. Under the hood: `kubectl -n internal-tools port-forward svc/internal-tools 8080:80`.
+On Linux the NodePort URLs also work directly (`make url` / `make urls` print them, e.g. `http://192.168.49.2:30080`).
+
+### Which images exist, and what is inside
+
+```bash
+minikube image ls | grep internal-tools   # the four app images loaded into the cluster
+make status                               # pods, services, PVCs in the namespace
+kubectl -n internal-tools exec deploy/internal-tools-kyc -- ls /app/tools /app/knowledge
+```
+
+Each image is ~73 MB (`python:3.12-slim`, non-root user 10001, UI pre-built), contains only the
+selected `tools/*.yaml` plus `_users.yaml`, every `knowledge/*.md`, and stores its SQLite file on its
+own PVC (`internal-tools-data[-<tool>]`) so the boards never share data or audit logs.
+
+### Adding another image
+
+Any tool id in `tools/*.yaml` can become its own image. The Chargeback Watchlist is wired up as a
+worked example (not part of `make split` by default):
+
+```bash
+make minikube TOOL=chargebacks && make forward TOOL=chargebacks   # → http://localhost:8084
+```
+
+For a new tool `payouts` (after `/new-tool` has created `tools/payouts.yaml`):
+
+1. `cp -r deploy/k8s/overlays/chargebacks deploy/k8s/overlays/payouts` and in the new
+   `kustomization.yaml` replace `chargebacks` with `payouts` (nameSuffix, instance label, image
+   name, `TOOLS` value) and pick an unused NodePort (`30085`).
+2. In the `Makefile` add `LOCAL_PORT_payouts ?= 8085`; optionally add `payouts` to `SPLIT_TOOLS`
+   so `make split*` includes it.
+3. `make minikube TOOL=payouts` → builds `internal-tools-payouts:dev` (`docker build --build-arg TOOLS=payouts`),
+   loads it into minikube, deploys its Deployment/Service/PVC. `make forward TOOL=payouts` opens it.
+
+No Python or TypeScript changes: the build arg drives `deploy/select_tools.py`, and the server
+loads/seeds whatever `TOOLS` names. One image can also serve several boards
+(`docker build --build-arg TOOLS=kyc,refunds …`) if you want a "compliance + payments" cut.
+
+### Make targets
+
+Every target takes `TOOL=all|kyc|refunds|flags|chargebacks` (default `all`); the `split-*` variants
+run the same target for each tool in `SPLIT_TOOLS` (`kyc refunds flags`):
 
 | Target | What it does |
 |---|---|
@@ -214,8 +319,9 @@ same target for each of the three per-tool instances:
 | `make deploy` / `make split-deploy` | `kubectl apply -k deploy/k8s/overlays/$TOOL` and wait for the rollout |
 | `make redeploy` / `make split-redeploy` | after a code change: rebuild the image(s) and roll the pod(s) |
 | `make secret` | creates/updates the `internal-tools-secrets` Secret (shared by all instances) from `OPENAI_API_KEY` / `WEBHOOK_SIGNING_SECRET` in your shell and restarts the pods |
+| `make forward` / `make split-forward` / `make unforward` | `kubectl port-forward` to http://localhost:8080 (8081/8082/8083 per tool) |
 | `make reseed` / `make split-reseed` | wipes the SQLite file on the volume and restarts → fresh demo data |
-| `make status` / `make logs` / `make url` / `make urls` | inspect (`urls` prints the three per-tool URLs) |
+| `make status` / `make logs` / `make url` / `make urls` | inspect (`url(s)` print the NodePort and the matching `make forward` command) |
 | `make down` / `make split-down` / `make destroy` | remove an instance / the three instances / delete the cluster |
 
 Upgrading a cluster that ran the pre-overlay single instance: `kubectl -n internal-tools delete
@@ -230,6 +336,51 @@ from your environment, exactly as Devin Cloud injects them from its Secrets stor
 For a real cluster, swap the NodePort for an Ingress in front of your IdP (OIDC / Entra ID
 replaces the demo `X-User` header) and point `DB_PATH` at a managed database volume or replace
 SQLite with Postgres.
+
+## Configure OpenAI (LLM + embedding model)
+
+Everything runs without a key — the AI panels then say **rules** (deterministic provider) and the
+knowledge base uses a local hashed-TF-IDF embedding. With a key the same code paths use OpenAI:
+
+| Variable | Default | What it drives |
+|---|---|---|
+| `OPENAI_API_KEY` | *(unset → offline)* | Enables the OpenAI provider **and** OpenAI embeddings. Secret. |
+| `OPENAI_MODEL` | `gpt-4o-mini` | Case summaries, plain-English queries, Ask-the-policy answers (strict JSON, schema-validated) |
+| `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Vector for every policy clause in `kb_chunks` and for each search query |
+| `WEBHOOK_SIGNING_SECRET` | *(unset → payloads marked unsigned)* | HMAC signature on outbound webhooks. Secret. |
+
+How to set them, per way of running:
+
+```bash
+# 1. Local uvicorn — export in the shell before starting (or put them in .env, copied from .env.example)
+export OPENAI_API_KEY=sk-...
+export OPENAI_MODEL=gpt-4o-mini                      # optional override
+export OPENAI_EMBEDDING_MODEL=text-embedding-3-small # optional override
+python -m server.seed && uvicorn server.main:app --port 8000
+
+# 2. minikube — the key goes into a Kubernetes Secret shared by every instance; models live in the ConfigMap
+export OPENAI_API_KEY=sk-...
+make secret                    # creates/updates internal-tools-secrets from your shell and restarts all pods
+#   models: edit deploy/k8s/base/configmap.yaml (OPENAI_MODEL / OPENAI_EMBEDDING_MODEL), then `make deploy` (or split-deploy)
+
+# 3. Devin Cloud — add OPENAI_API_KEY / WEBHOOK_SIGNING_SECRET in Settings → Secrets; every session gets them as env vars
+```
+
+Check what an instance is actually using:
+
+```bash
+curl -s -H 'X-User: marcus' http://localhost:8080/api/knowledge/status
+# → {"backend":"openai","model":"text-embedding-3-small","configured":"openai","chunks":53,"docs":[...],"indexed_at":...,"last_error":null}
+#   backend "lexical" = running offline (no key, or fell back after an API error shown in last_error)
+```
+
+Rules the code enforces regardless of provider: protected/masked fields are removed before any
+payload leaves the process; model output is validated against the tool schema; every AI call is
+audited (`ai:summary`, `ai:query`, `ai:ask`); on an API error or quota exhaustion the request falls
+back to the rules provider instead of failing. Switching embedding model re-embeds every clause on the
+next start (the cache is keyed by model + content hash); unchanged clauses under the same model are
+never re-embedded. Never commit a key: `.env` is gitignored, `.env.example` holds names only, and a
+test fails if a signing key appears in a tracked file.
 
 ## Devin Cloud features used
 
